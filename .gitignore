@@ -1,0 +1,48 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Obsidian (vault config — kişisel, takip etme)
+.obsidian/workspace.json
+.obsidian/cache/
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Node (mobil için)
+node_modules/
+*.log
+npm-debug.log*
+.expo/
+.expo-shared/
+
+# Python (backend için)
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Build
+build/
+dist/
+*.apk
+*.ipa
+
+# OS / runtime
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage / test
+coverage/
+*.lcov
+.nyc_output/
