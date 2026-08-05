@@ -1,15 +1,26 @@
 <!--
   Nav.svelte — Alt navigasyon (3 sekme)
   Aktif sekme teal vurgulu. Safe area için safe-bottom padding.
+
+  Sekmeler:
+    - Kronometre   → /
+    - Odalar       → /rooms       (D-013 hero layout, D-014 last-joined hero)
+    - Profil       → /profile
 -->
 <script lang="ts">
 	import { page } from '$app/state';
 
-	const tabs = [
+	type Tab = {
+		href: string;
+		label: string;
+		icon: 'timer' | 'rooms' | 'user';
+	};
+
+	const tabs: Tab[] = [
 		{ href: '/', label: 'Kronometre', icon: 'timer' },
-		{ href: '/leaderboard', label: 'Liderlik', icon: 'trophy' },
+		{ href: '/rooms', label: 'Odalar', icon: 'rooms' },
 		{ href: '/profile', label: 'Profil', icon: 'user' }
-	] as const;
+	];
 
 	function isActive(href: string): boolean {
 		const path = page.url.pathname;
@@ -32,7 +43,6 @@
 					class:text-fg-subtle={!active}
 					aria-current={active ? 'page' : undefined}
 				>
-					<!-- Inline SVG icons (currentColor ile renklenir) -->
 					{#if tab.icon === 'timer'}
 						<svg
 							xmlns="http://www.w3.org/2000/svg"
@@ -44,6 +54,7 @@
 							stroke-width="2"
 							stroke-linecap="round"
 							stroke-linejoin="round"
+							aria-hidden="true"
 						>
 							<circle cx="12" cy="13" r="8" />
 							<path d="M12 9v4l2 2" />
@@ -51,7 +62,7 @@
 							<path d="m22 6-3-3" />
 							<path d="M9 1h6" />
 						</svg>
-					{:else if tab.icon === 'trophy'}
+					{:else if tab.icon === 'rooms'}
 						<svg
 							xmlns="http://www.w3.org/2000/svg"
 							width="22"
@@ -62,15 +73,14 @@
 							stroke-width="2"
 							stroke-linecap="round"
 							stroke-linejoin="round"
+							aria-hidden="true"
 						>
-							<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" />
-							<path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" />
-							<path d="M4 22h16" />
-							<path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" />
-							<path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" />
-							<path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" />
+							<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+							<circle cx="9" cy="7" r="4" />
+							<path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+							<path d="M16 3.13a4 4 0 0 1 0 7.75" />
 						</svg>
-					{:else if tab.icon === 'user'}
+					{:else}
 						<svg
 							xmlns="http://www.w3.org/2000/svg"
 							width="22"
@@ -81,6 +91,7 @@
 							stroke-width="2"
 							stroke-linecap="round"
 							stroke-linejoin="round"
+							aria-hidden="true"
 						>
 							<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
 							<circle cx="12" cy="7" r="4" />

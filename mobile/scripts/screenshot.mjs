@@ -1,5 +1,5 @@
-// Screenshot script — Sprint-01 doğrulama
-// 4 ekran görüntüsü alır: onboarding, kronometre (idle + running), rooms, profile
+// Screenshot script — Sprint-02 doğrulama
+// 5 ekran görüntüsü alır: onboarding, kronometre (idle + running), odalar hero, odalar modal
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 
@@ -30,23 +30,30 @@ await page2.goto(`${URL}/`, { waitUntil: 'networkidle' });
 await page2.screenshot({ path: `${SHOTS_DIR}/02-kronometre-idle.png` });
 console.log('✓ 02-kronometre-idle.png');
 
-// --- 3) Kronometre running (butona tıkla, 2.5 saniye bekle) ---
+// --- 3) Kronometre running (Başlat'a tıkla, 2.5 saniye bekle) ---
 await page2.click('button:has-text("Başlat")');
 await page2.waitForTimeout(2500);
 await page2.screenshot({ path: `${SHOTS_DIR}/03-kronometre-running.png` });
 console.log('✓ 03-kronometre-running.png');
 
-// --- 4) Leaderboard ---
+// --- 4) Odalar (hero + diğerleri) ---
 const page3 = await ctx2.newPage();
-await page3.goto(`${URL}/leaderboard`, { waitUntil: 'networkidle' });
-await page3.screenshot({ path: `${SHOTS_DIR}/04-leaderboard.png` });
-console.log('✓ 04-leaderboard.png');
+await page3.goto(`${URL}/rooms`, { waitUntil: 'networkidle' });
+await page3.waitForTimeout(300); // stores hydrate olsun
+await page3.screenshot({ path: `${SHOTS_DIR}/04-odalar-hero.png`, fullPage: false });
+console.log('✓ 04-odalar-hero.png');
 
-// --- 5) Profile ---
+// --- 5) Odalar — Oda Oluştur modal ---
+await page3.click('button[aria-label="Yeni oda oluştur"]');
+await page3.waitForSelector('[role="dialog"]', { state: 'visible' });
+await page3.screenshot({ path: `${SHOTS_DIR}/05-odalar-create-modal.png`, fullPage: false });
+console.log('✓ 05-odalar-create-modal.png');
+
+// --- 6) Profil ---
 const page4 = await ctx2.newPage();
 await page4.goto(`${URL}/profile`, { waitUntil: 'networkidle' });
-await page4.screenshot({ path: `${SHOTS_DIR}/05-profile.png` });
-console.log('✓ 05-profile.png');
+await page4.screenshot({ path: `${SHOTS_DIR}/06-profile.png` });
+console.log('✓ 06-profile.png');
 
 await browser.close();
 console.log('\nTüm ekran görüntüleri:', SHOTS_DIR);
