@@ -15,6 +15,7 @@
 	import { username } from '$lib/stores/username.svelte';
 	import { timer } from '$lib/stores/timer.svelte';
 	import { isFirebaseEnabled } from '$lib/firebase/client';
+	import { getDeviceUid } from '$lib/firebase/uid';
 	import * as fb from '$lib/firebase/rooms';
 	import * as reactions from '$lib/firebase/reactions';
 	import { playClick } from '$lib/utils/click';
@@ -291,9 +292,8 @@
 		<!-- Kendine tepki yaz — D-052 (leaderboard'dan bağımsız, presence debug'a takılmaz) -->
 		<button
 			type="button"
-			onclick={() => username.current && openReactionModal(username.current)}
+			onclick={() => openReactionModal(getDeviceUid())}
 			disabled={!username.current}
-			class="w-full rounded-2xl border border-border bg-surface px-4 py-3 text-sm font-medium text-fg-muted active:bg-surface-2 disabled:opacity-40"
 		>
 			💬 Tepki yaz (kendine)
 		</button>

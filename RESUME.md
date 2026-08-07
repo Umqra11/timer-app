@@ -1,7 +1,7 @@
 ---
 tags: [timer, resume, session-handoff, obsidian-ready]
 created: 2026-08-04
-updated: 2026-08-07 (S-0028 — Sprint-03 Faz 1+2+3 tamamlandı, canlıda https://timerviber.web.app. Faz 1: oda detay, memberCount, owner delete ✅. Faz 2: leaderboard + presence (v6 fix sonrası çalışıyor — kullanıcı leaderboard'da görünüyor) ✅. Faz 3: reactions sistemi yazıldı ✅, SDK write debug gerek (Sprint-04). Toplam 55 karar, 5 commit, canlı URL aktif.)
+updated: 2026-08-07 (S-0029 — Sprint-04 Aşama 1-4 (debug + asıl fix) tamamlandı. SDK `sendReaction` permission-denied kök nedeni: `/users/{uid}/rateLimit` subcollection rule eksikti + `username.current` `targetUid` olarak yazılıyordu. İkisi de fix'lendi, canlıda cross-user round-trip çalışıyor. TTL policy ⏳ Console'dan manuel enable.)
 type: session-resume
 ---
 
@@ -16,10 +16,10 @@ type: session-resume
 
 ## 📍 Şu An Neredeyiz
 
-**Aşama:** Sprint-03 Faz 1 + 2 + 3 (kod) tamamlandı, **Sprint-04 (debug + polish) ⏳**
-**Tarih:** 2026-08-07 (S-0028)
+**Aşama:** Sprint-04 Aşama 1-4 (debug + asıl fix) tamamlandı, **Aşama 5 (TTL policy) ⏳ Console'dan manuel**
+**Tarih:** 2026-08-07 (S-0029)
 **Patron:** Enes
-**Canlı:** https://timerviber.web.app (otomatik deploy, `Umqra11/timer-app` GitHub repo, 7 commit)
+**Canlı:** https://timerviber.web.app (otomatik deploy, `Umqra11/timer-app` GitHub repo, 8 commit)
 
 ### ✅ Sprint-03 — Tamamlanan (S-0024..S-0028)
 
@@ -38,7 +38,7 @@ type: session-resume
 10. **KRİTİK FIX (v6)**: `setRoomContext` artık onRemote callback olmadan da `writePresence()` çağırıyor. Önceki kod `if (!onRemote) return;` ile erken dönüyordu — bu yüzden presence hiç yazılmıyordu. Şimdi: `if (!ctx || !isFirebaseEnabled()) return;` + `if (onRemote) { subscribe }` + HER ZAMAN `writePresence`
 11. **Canlıda kanıtlandı** — v6 fix sonrası leaderboard'da `kullanici2` görünüyor, toplam süre, durum pill — hepsi çalışıyor
 
-**Faz 3 — Mesaj/Reactions (D-052, D-053, D-054, D-055)** 🟡 (kod tamam, SDK debug gerek)
+**Faz 3 — Mesaj/Reactions (D-052, D-053, D-054, D-055)** ✅ (Sprint-04 Aşama 1-4'te SDK debug tamamlandı)
 12. `src/lib/firebase/reactions.ts` (6.7 KB) — `sendReaction()` (D-052 atomic), `subscribeReactions()` (D-054)
 13. D-053: Rate limit — dakikada 5, saatte 30, sliding window. Client-side, server-side Sprint-04'te Cloud Function ile.
 14. D-052: `expireAt` field — Firestore TTL policy için (4 saat sonra otomatik silinme)
@@ -46,19 +46,30 @@ type: session-resume
 16. `+page.svelte`: Tepki yazma modalı (textarea + sayaç + hata), leaderboard satırlarında baloncuklar ("X dk önce"), kendine tepki yazma butonu
 17. `firestore.rules`: `rooms/{roomId}/reactions/{reactionId}` match (read:true, create: text 1-60 + zorunlu alanlar, update/delete:false — ephemeral)
 18. **KRİTİK FIX (v8)**: `runTransaction` içinde async `getDoc` çalışmıyor (tx.get sadece aynı transaction doc'larını okuyabilir, rate limit doc farklı collection'da). Düzeltme: İki adımlı sıralı işlem (readRateLimit → check → writeRateLimit → setDoc)
-19. **Canlıda kanıtlandı** — REST API ile yazılan reaction browser'da görünüyor (`testus: test mesajı şimdi` baloncuğu). SDK `sendReaction` hâlâ 404 dönüyor (debug Sprint-04'e kaldı).
+19. **Sprint-04 KRİTİK FIX (v9)**: (a) `users/{uid}/rateLimit/{doc}` subcollection rule eklendi (eksikti, permission-denied), (b) "Tepki yaz (kendine)" `username.current` yerine `getDeviceUid()` kullanıyor (targetUid uuid olmalı)
+20. **Canlıda kanıtlandı** — SDK ile yazılan tepki browser'da baloncuk olarak görünüyor, cross-user round-trip çalışıyor (`kullanici2x` → `debugger1`).
 
 ---
 
-## 🔴 Sprint-04 — Bilinen Debug'lar (Yapılacak)
+## ✅ Sprint-04 — Tamamlananlar (S-0029)
 
-1. **SDK `sendReaction` 404** — REST 200, SDK sessizce başarısız. Olası: `setDoc` field'ları farklı serialize ediyor, `request.resource.data.keys().hasAll([...])` rule check fail ediyor. Debug: rule'da `hasAll` çıkar, MVP allow yap.
-2. **Firestore TTL policy** — `expireAt` field için TTL policy Console'dan veya `gcloud firestore fields ttls update expireAt --collection-group=reactions --enable-ttl --seconds=14400`. (gcloud yok, Console'dan yapılacak.)
-3. **Server-side rate limit** — Cloud Function ile `users/{uid}/rateLimit/reactions` server-side check
-4. **Server-side owner check (D-049 sıkılaştırma)** — Custom function ile uid karşılaştırması
-5. **Oda silme recursive delete** — Cloud Function ile presence + reactions + joinedRooms temizliği
-6. **Stats rolling week sum (D-018)** — şu an sadece "bugün" gösteriliyor
-7. **Username reclamation policy (D-015)** — eski username'ler orphan kalıyor, 30 gün grace period
+### Aşama 1-4: Debug + Asıl Fix ✅
+
+**Kök neden (iki bağımsız bug):**
+
+1. **Firestore rule eksik** — `/users/{uid}/rateLimit/{doc}` subcollection için rule tanımlı değildi. `writeRateLimit()` `setDoc` permission-denied alıyordu, tüm `sendReaction` try/catch'e düşüyordu. Düzeltme: `/rateLimit/{doc}` match eklendi.
+2. **Yanlış targetUid** — `+page.svelte` "Tepki yaz (kendine)" butonu `username.current` (örn. "debugger1") ile modal açıyordu. Subscribe filter `r.targetUid === m.uid` (uuid) ile eşleşmediği için baloncuk görünmüyordu (sadece REST ile yazılanlar görünüyordu). Düzeltme: `getDeviceUid()`.
+
+**Canlıda kanıtlandı:** `kullanici2x` → `debugger1` tepki yazdı, baloncuk `debugger1`'in altında göründü, diğer kullanıcılar da gördü.
+
+### ⏳ Sprint-04 devam — Manuel patron işlemi
+
+1. **Firestore TTL policy** — Console → Firestore → Indexes & TTL → `expireAt` field, 14400 saniye (4 saat)
+2. **Server-side rate limit** — Cloud Function
+3. **Server-side owner check (D-049 sıkılaştırma)** — Custom function
+4. **Oda silme recursive delete** — Cloud Function
+5. **Stats rolling week sum (D-018)**
+6. **Username reclamation policy (D-015)**
 
 ---
 
@@ -69,19 +80,12 @@ type: session-resume
 | Frontend | SvelteKit (PWA) — `adapter-static` |
 | Hosting | 🔥 Firebase Hosting (D-044) — `https://timerviber.web.app` |
 | Backend + DB + Realtime | 🔥 Firestore (europe-west3, eur3) |
-| Auth | ❌ YOK (D-015) — username + localStorage uid |
-| Sync | BroadcastChannel (aynı tarayıcı) + Firestore onSnapshot (farklı cihaz) |
-| Styling | Tailwind CSS v4 |
-| CI/CD | `firebase deploy --only hosting,firestore:rules` (manuel, her Sprint sonu) |
-| Repo | `Umqra11/timer-app` GitHub |
-
-**Maliyet:** MVP $0/ay (Spark: 10 GB hosting + 1 GB Firestore)
-
----
-
-## 📊 Commit'ler (Sprint-03)
+## 📊 Commit'ler (Sprint-03 + Sprint-04)
 
 ```
+(Sprint-04 Aşama 1-4)
+fix(sprint-04): rateLimit subcollection rule + getDeviceUid for self-reaction target
+(Sprint-03 Faz 3)
 14d49ce fix(reactions): sequential rate limit (runTransaction uyumsuz)
 2c26c90 feat(sprint-03): reactions sistemi (D-052/053/054)
 4ad33ef fix(sprint-03): make setRoomContext.onRemote truly optional  ← KRİTİK FIX (presence)
@@ -108,24 +112,20 @@ e62938a feat(sprint-02): Firebase integration, Firestore stores, stats, click so
 
 ## 📋 Sprint-04 Plan (Yeni Session İçin)
 
-### Aşama 1: Debug (30-60 dk)
-- [ ] SDK `sendReaction` neden 404 dönüyor? (rules field check, setDoc serialize, transaction scope)
-- [ ] TTL policy: `expireAt` field için gcloud veya Console config
+### ✅ Tamamlandı
 
-### Aşama 2: Server-side enforcement (1-2 saat)
+- [x] Aşama 1: Debug (SDK `sendReaction` permission-denied) — kök neden bulundu (rateLimit rule + yanlış targetUid), fix deploy edildi
+- [x] Aşama 4: Verification — canlı smoke cross-user round-trip çalışıyor
+
+### ⏳ Kalan
+
+- [ ] **TTL policy enable (patron işlemi)** — Firebase Console → Firestore → Indexes & TTL → `expireAt` field, 14400 saniye. Aşama 1'in ikinci maddesi.
 - [ ] Cloud Function: `users/{uid}/rateLimit/reactions` server-side check
 - [ ] Cloud Function: oda silme recursive (presence + reactions + joinedRooms)
 - [ ] Cloud Function: oda sahibi custom check (uid karşılaştırması)
-
-### Aşama 3: Polish (1 saat)
 - [ ] Stats rolling week sum (D-018)
 - [ ] Username reclamation policy (D-015)
 - [ ] Console error monitoring
-
-### Aşama 4: Verification (30 dk)
-- [ ] check + build + deploy
-- [ ] Canlı smoke: 2 kullanıcı aynı odada, leaderboard + reactions
-- [ ] RESUME/STATUS final güncelleme
 
 ---
 
@@ -138,16 +138,17 @@ e62938a feat(sprint-02): Firebase integration, Firestore stores, stats, click so
 2. `STATUS.md` kontrol et
 3. `DECISIONS.md` gözden geçir (55 karar — D-001'den D-055'e)
 4. Canlı test: https://timerviber.web.app/rooms/0d0aafd0-abbe-4264-a47c-d7ae557d3d1e
-5. Sprint-04 debug listesinden başla
+5. Patronun TTL policy enable işlemini bekle, sonra kalan listeye devam et
 
 **Önemli notlar:**
 - v6 fix (`setRoomContext.onRemote` opsiyonel) Sprint-02'den kalma KRİTİK bug fix — presence yazımı çözer
 - v8 fix (`runTransaction` → sequential get+set) Sprint-03 Faz 3'te bulundu — async getDoc uyumsuz
+- **v9 fix** (Sprint-04 Aşama 1-4): (a) `/users/{uid}/rateLimit` subcollection rule eklendi, (b) `+page.svelte` `getDeviceUid()` kullanıyor — iki bağımsız bug, ikisi de fix'lendi
 - CDN cache: Her deploy sonrası 30 saniye bekle, `?v=N` query string ile bypass
 
 ---
 
-**Son güncelleme:** 2026-08-07 (S-0028 — Sprint-03 Faz 1+2+3 tamamlandı, Faz 4 debug ⏳. 7 commit, 55 karar, canlı aktif.)
+**Son güncelleme:** 2026-08-07 (S-0029 — Sprint-04 Aşama 1-4 tamamlandı, Aşama 5 ⏳ TTL policy patron işlemi. 8 commit, 55 karar, canlıda SDK + cross-user tepki çalışıyor.)
 **Patron:** Enes
 **Müdür:** Mavis
 **Sıradaki sprint:** Sprint-04 — Debug + Polish

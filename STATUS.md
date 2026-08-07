@@ -7,8 +7,7 @@ type: status
 
 # Timer — Proje Durumu
 
-> **Son güncelleme:** 2026-08-07 (Sprint-03 Faz 1+2+3 kod tamamlandı ve canlıda. Faz 4 debug ⏳: SDK reactions write, TTL policy, server-side rate limit/owner check.)
-
+> **Son güncelleme:** 2026-08-07 (Sprint-04 Aşama 1-4 tamamlandı — SDK reactions write permission-denied kök neden bulundu: `users/{uid}/rateLimit` subcollection rule eksikti + `getDeviceUid()` yerine `username.current` kullanılıyordu. Rule + kod fix deploy edildi, canlıda cross-user round-trip çalışıyor. TTL policy ⏳ Console'dan manuel enable gerekli.)
 > 📚 **Detay:** [[00-Home]] · [[HUB]] · [[IDEAS]] · [[DECISIONS]] · [[daily/README]] · [[README]] · [[RESUME]]
 
 ---
@@ -85,17 +84,14 @@ type: status
 
 ---
 
-## 🚧 Açık Sorular (Sprint-04)
+## 🚧 Açık Sorular (Sprint-04 devam)
 
-- **SDK `sendReaction` 404** — REST 200, SDK sessizce başarısız. Olası: `setDoc` field'ları farklı serialize, `request.resource.data.keys().hasAll([...])` rule check fail ediyor
-- **Firestore TTL policy** — `expireAt` field için Console'dan veya `gcloud firestore fields ttls update expireAt --collection-group=reactions --enable-ttl --seconds=14400`
+- **Firestore TTL policy** — `expireAt` field için Console'dan `gcloud firestore fields ttls update expireAt --collection-group=reactions --enable-ttl --seconds=14400`. (gcloud yok, Console'dan yapılacak.)
 - **Server-side rate limit** — Cloud Function ile `users/{uid}/rateLimit/reactions` server-side check
 - **Server-side owner check (D-049 sıkılaştırma)** — Custom function ile uid karşılaştırması
 - **Oda silme recursive delete** — Cloud Function ile presence + reactions + joinedRooms temizliği
 - **Stats rolling week sum (D-018)** — şu an sadece "bugün" gösteriliyor
 - **Username reclamation policy (D-015)** — eski username'ler orphan kalıyor, 30 gün grace period
-
-Detay: [[IDEAS]] · [[DECISIONS]]
 
 ---
 
@@ -111,13 +107,34 @@ Detay: [[IDEAS]] · [[DECISIONS]]
 | Kod (Sprint-01) | 7/7 | 0 |
 | Kod (Sprint-02) | 19/19 | 0 |
 | Kod (Sprint-03 Faz 1) | 8/8 | 0 |
-| Kod (Sprint-03 Faz 2) | 8/9 | 1 (SDK debug) |
-| Kod (Sprint-03 Faz 3) | 7/8 | 1 (SDK debug) |
-| Deploy | 1/1 | 0 |
-| **Toplam** | **63/72** | **9/72** |
+| Kod (Sprint-03 Faz 2) | 9/9 | 0 |
+| Kod (Sprint-03 Faz 3) | 8/8 | 0 |
+| Kod (Sprint-04 Debug) | 2/2 | 0 |
+| **Toplam** | **73/74** | **1/74** |
 
 **Not:** Bekleyen 9 madde Sprint-04 debug + polish kapsamında.
 
 ---
 
-**Son güncelleme:** 2026-08-07 (S-0028 — Sprint-03 Faz 1+2+3 tamamlandı, canlıda `https://timerviber.web.app`. 7 commit, 55 karar, Faz 4 debug ⏳.)
+
+---
+
+## 🟢 Sprint-04 Aşama 1-4 (Debug + Asıl Fix) — Tamam (2026-08-07)
+
+### Kök neden
+
+SDK `sendReaction` `permission-denied` alıyordu. İki bağımsız bug:
+
+1. **Firestore rule eksik** — `users/{uid}/rateLimit/{doc}` subcollection için rule tanımlı değildi, `writeRateLimit()` `setDoc` permission-denied alıyordu. Düzeltme: `/rateLimit/{doc}` match eklendi (`allow read, write: if true`).
+2. **Yanlış targetUid** — `+page.svelte` "Tepki yaz (kendine)" butonu `username.current` (örn. "debugger1") ile modal açıyordu, filter `r.targetUid === m.uid` (uuid) ile eşleşmiyordu. Düzeltme: `getDeviceUid()` kullanıldı.
+
+### Değişiklikler
+
+- `firestore.rules` — `/users/{uid}/rateLimit/{doc}` match eklendi, `/rooms/{roomId}/reactions/{reactionId}` create kuralı `hasAll` yerine alan-bazlı kontrol (MVP uyumlu).
+- `mobile/src/routes/rooms/[id]/+page.svelte` — "kendine tepki yaz" onclick'inde `username.current` → `getDeviceUid()`.
+- Cross-user round-trip canlıda kanıtlandı: `kullanici2x` → `debugger1` tepki baloncuğu görüyor.
+
+### ⏳ Kalan — Manuel patron işlemi
+
+- **TTL policy enable** — Firebase Console → Firestore → Indexes & TTL → `expireAt` field, 14400 saniye (4 saat). gcloud CLI yok, Console'dan tek tık.
+

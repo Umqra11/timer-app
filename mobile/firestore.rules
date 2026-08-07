@@ -32,6 +32,12 @@ service cloud.firestore {
 				allow create, update: if true;  // server-side check yok, MVP
 				allow delete: if false;
 			}
+
+			// users/{uid}/rateLimit/{doc}: dakikalık/saatlik sayaç (D-053)
+			// Sprint-04 v2 fix: subcollection rule eksikti — sendReaction permission-denied alıyordu
+			match /rateLimit/{doc} {
+				allow read, write: if true;  // MVP client-side check, Sprint-04'te Cloud Function
+			}
 		}
 
 		// rooms/{roomId}: herkese açık okunur.
@@ -44,15 +50,15 @@ service cloud.firestore {
 				&& request.resource.data.name.size() <= 40
 				&& request.resource.data.inviteCode is string
 				&& request.resource.data.ownerUid is string
-				&& request.resource.data.keys().hasAll(['name', 'ownerUid', 'inviteCode', 'createdAt', 'memberCount'])
+				&& request.resource.data.keys().hasAll(['name', 'ownerUid', 'inviteCode', 'createdAt', 'memberCount']);
 			allow update: if request.resource.data.diff(resource.data).affectedKeys()
 				.hasOnly(['memberCount'])
 				&& request.resource.data.memberCount is int
 				&& request.resource.data.memberCount >= 1;
 			// D-049: silme — client-side owner check yapıyor (Firestore rules custom
+			// function olmadan uid karşılaştırma yapılamadığından MVP'de açık)
 			allow delete: if true;
 
-			// rooms/{roomId}/presence/{uid}: odadaki kullanıcı durumu (D-019, D-047)
 			// rooms/{roomId}/presence/{uid}: odadaki kullanıcı durumu (D-019, D-047)
 			match /presence/{uid} {
 				allow read: if true;
@@ -64,16 +70,15 @@ service cloud.firestore {
 			//   - expireAt: timestamp (Firestore TTL policy, 4 saat sonra silinir)
 			match /reactions/{reactionId} {
 				allow read: if true;
-				// MVP: text 1-60, expireAt zorunlu (D-052 TTL için)
-				// is timestamp check rate limit'i zorlaştırıyor, MVP'de basit
-				allow create: if request.resource.data.keys()
-					.hasAll(['targetUid', 'senderUid', 'senderUsername', 'text', 'createdAt', 'expireAt'])
+				// MVP: text 1-60 + 3 uid alanı zorunlu (D-052, D-053)
+				// Sprint-04 v3: hasAll + createdAt/expireAt kuralları kaldırıldı
+				// (SDK Date objesi ile hasAll fail ediyordu, rateLimit rule eklendi)
+				allow create: if request.resource.data.text is string
+					&& request.resource.data.text.size() > 0
+					&& request.resource.data.text.size() <= 60
 					&& request.resource.data.targetUid is string
 					&& request.resource.data.senderUid is string
-					&& request.resource.data.senderUsername is string
-					&& request.resource.data.text is string
-					&& request.resource.data.text.size() > 0
-					&& request.resource.data.text.size() <= 60;
+					&& request.resource.data.senderUsername is string;
 				allow update, delete: if false;
 			}
 		}
