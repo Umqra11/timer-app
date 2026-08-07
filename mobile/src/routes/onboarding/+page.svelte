@@ -1,10 +1,8 @@
 <!--
   Onboarding — İlk kez giren kullanıcı için username seçimi
   D-015, D-016, D-024
-  - Username girilir, localStorage'a yazılır
-  - Direkt ana ekrana (/) yönlendirilir
-  - D-016 unique kontrolü: Firestore eklendiğinde server-side kontrol yapılacak
-    (şimdilik sadece client-side, MVP için yeterli)
+  - Username Firestore'da atomik claim edilir (D-016 server-side unique).
+  - Çakışma varsa kullanıcıya hata gösterilir, tekrar denemesi istenir.
 -->
 <script lang="ts">
 	import { goto } from '$app/navigation';
@@ -14,28 +12,22 @@
 	let error = $state<string | null>(null);
 	let saving = $state(false);
 
-	function validate(value: string): string | null {
-		const trimmed = value.trim();
-		if (trimmed.length < 2) return 'En az 2 karakter olmalı';
-		if (trimmed.length > 20) return 'En fazla 20 karakter olabilir';
-		if (!/^[a-zA-Z0-9_ğüşöçıİĞÜŞÖÇ]+$/.test(trimmed))
-			return 'Sadece harf, rakam ve alt çizgi kullanabilirsin';
-		return null;
-	}
-
-	function handleSubmit(e: Event) {
+	async function handleSubmit(e: Event) {
 		e.preventDefault();
-		error = validate(inputValue);
-		if (error) return;
-
+		if (saving) return;
+		error = null;
 		saving = true;
-		const ok = username.set(inputValue);
+		const outcome = await username.claim(inputValue);
 		saving = false;
 
-		if (ok) {
+		if (outcome === 'ok') {
 			goto('/', { replaceState: true });
+		} else if (outcome === 'taken') {
+			error = 'Bu kullanıcı adı çoktan alınmış — başka bir tane dene';
+		} else if (outcome === 'invalid') {
+			error = '2-20 karakter, harf/rakam/alt çizgi kullanabilirsin';
 		} else {
-			error = 'Kaydedilemedi, tekrar dene';
+			error = 'Şu an kaydedilemedi, internetini kontrol et ve tekrar dene';
 		}
 	}
 </script>

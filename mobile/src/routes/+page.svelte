@@ -10,6 +10,7 @@
 	import { username } from '$lib/stores/username.svelte';
 	import { timer } from '$lib/stores/timer.svelte';
 	import { formatHMS } from '$lib/utils/format';
+	import { playClick } from '$lib/utils/click';
 
 	// Sayaç her zaman beyaz (D-041)
 	const display = $derived(formatHMS(timer.displaySeconds));
@@ -28,24 +29,31 @@
 	let lastSessionSeconds = $state(0);
 
 	function handlePause() {
+		playClick();
 		timer.pause();
 	}
 
 	function handleResume() {
+		playClick();
 		timer.resume();
 	}
 
 	function handleStart() {
+		playClick();
 		timer.start();
 	}
 
-	/** Durdur / Sıfırla — kutlama modalını aç, sonra reset */
+	/** Durdur / Sıfırla — önce süreyi snapshot al, sonra finish() ile presence'a
+	 * 'finished' yazdır + state'i idle'a çek, sonra kutlama modalını aç. */
 	function handleStop() {
+		playClick();
 		if (timer.elapsedMs > 0) {
 			lastSessionSeconds = timer.displaySeconds;
+			timer.finish();
 			showCelebration = true;
+		} else {
+			timer.reset();
 		}
-		timer.reset();
 	}
 
 	function handleCelebrationClose() {

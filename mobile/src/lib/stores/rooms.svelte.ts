@@ -1,32 +1,34 @@
 /**
- * Rooms Store — D-013 (hero layout), D-014 (son katıldığın oda hero olur)
+ * Rooms Store — D-013 (hero layout), D-014 (last-joined hero)
  *
- * Şimdilik mock data + localStorage. Sprint-02 devamında Firestore query'leri
- * ile değiştirilecek (D-009/D-020):
- *   - koleksiyon: rooms/{roomId}
- *   - alanlar:    name, members[], createdAt, lastJoinedAt (kullanıcı başına)
+ * Veri kaynağı: Firestore (D-009/D-020). Firebase config yoksa offline
+ * fallback: localStorage'a mock seed yazıp oradan okur (lokal geliştirme).
  *
- * Public API:
+ * Public API (Sprint-01 ile uyumlu):
  *   - rooms.list        : tüm odalar (joinAt desc)
+ *   - rooms.sorted      : list'in sıralanmış kopyası
  *   - rooms.hero        : son katıldığın oda (yoksa en yeni)
  *   - rooms.others      : hero hariç diğer odalar
- *   - rooms.create(name): yeni oda oluşturur, davet kodu üretir, kullanıcıyı ekler
- *   - rooms.join(code)  : koda göre oda bulunur ve kullanıcı katılır
- *
- * Davet kodları 6 karakterlik base36 string (36^6 ≈ 2.2 milyar kombinasyon).
+ *   - rooms.create(name): yeni oda oluşturur, davet kodu üretir, katılır
+ *   - rooms.join(code)  : koda göre oda bulunur ve katılınır
+ *   - rooms.makeHero(id): bir odayı "son açılan" yap
+ *   - rooms.subscribe() : bağlamak için (rooms/+page.svelte mount'unda çağrılır)
  */
 
-const STORAGE_KEY = 'timer_rooms';
-const LAST_JOINED_KEY = 'timer_last_joined';
+import { isFirebaseEnabled } from '$lib/firebase/client';
+import * as fb from '$lib/firebase/rooms';
 
 export type Room = {
 	id: string;
 	name: string;
-	members: number; // mocklarda üye sayısı, gerçekte members.length
-	createdAt: number; // unix ms
-	joinAt?: number; // kullanıcının bu odaya katıldığı zaman (localStorage'lı)
+	members: number; // backward-compat: Firestore'da 0 (üye sayısı presence'tan türetilir)
+	createdAt: number;
+	joinAt?: number;
 	inviteCode: string;
 };
+
+const STORAGE_KEY = 'timer_rooms';
+const LAST_JOINED_KEY = 'timer_last_joined';
 
 const SEED_ROOMS: Omit<Room, 'joinAt'>[] = [
 	{
@@ -59,17 +61,17 @@ const SEED_ROOMS: Omit<Room, 'joinAt'>[] = [
 	}
 ];
 
+const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+
 function generateInviteCode(): string {
-	// 6 base36 karakter (A-Z 0-9) — çakışma ihmal edilebilir (2.2M kombinasyon).
-	const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 	let out = '';
 	for (let i = 0; i < 6; i++) {
-		out += chars[Math.floor(Math.random() * chars.length)];
+		out += ALPHABET[Math.floor(Math.random() * ALPHABET.length)];
 	}
 	return out;
 }
 
-function loadRooms(): Room[] {
+function loadLocal(): Room[] {
 	if (typeof localStorage === 'undefined') return [];
 	const raw = localStorage.getItem(STORAGE_KEY);
 	if (raw) {
@@ -80,15 +82,14 @@ function loadRooms(): Room[] {
 			// bozuk veri — seed'le
 		}
 	}
-	// seed ile başla, tüm seed odalarda joinAt = createdAt
 	const seeded: Room[] = SEED_ROOMS.map((r) => ({ ...r, joinAt: r.createdAt }));
-	saveRooms(seeded);
+	saveLocal(seeded);
 	return seeded;
 }
 
-function saveRooms(rooms: Room[]) {
+function saveLocal(items: Room[]) {
 	if (typeof localStorage === 'undefined') return;
-	localStorage.setItem(STORAGE_KEY, JSON.stringify(rooms));
+	localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
 }
 
 function loadLastJoinedId(): string | null {
@@ -102,7 +103,8 @@ function saveLastJoinedId(id: string) {
 }
 
 function createRoomsStore() {
-	let list = $state<Room[]>(loadRooms());
+	const initial: Room[] = isFirebaseEnabled() ? [] : loadLocal();
+	let list = $state<Room[]>(initial);
 
 	const sorted = $derived([...list].sort((a, b) => (b.joinAt ?? 0) - (a.joinAt ?? 0)));
 
@@ -119,9 +121,20 @@ function createRoomsStore() {
 				})()
 	);
 
-	const others = $derived<Room[]>(
-		hero ? sorted.filter((r) => r.id !== hero.id) : []
-	);
+	const others = $derived<Room[]>(hero ? sorted.filter((r) => r.id !== hero.id) : []);
+
+	let unsubscribe: (() => void) | null = null;
+
+	function mergeFromFirestore(items: fb.RoomMeta[]): Room[] {
+		return items.map((m) => ({
+			id: m.id,
+			name: m.name,
+			members: m.memberCount,
+			createdAt: m.createdAt,
+			joinAt: m.joinedAt,
+			inviteCode: m.inviteCode
+		}));
+	}
 
 	return {
 		get list() {
@@ -136,10 +149,44 @@ function createRoomsStore() {
 		get others() {
 			return others;
 		},
+		/** Component mount'unda çağır: Firestore dinlemeye başla (veya local seed yükle). */
+		subscribe(): void {
+			if (unsubscribe) return;
+			if (!isFirebaseEnabled()) {
+				// offline: zaten yüklendi
+				return;
+			}
+			unsubscribe = fb.subscribeMyRooms((remote) => {
+				list = mergeFromFirestore(remote);
+			});
+		},
+		dispose(): void {
+			if (unsubscribe) {
+				unsubscribe();
+				unsubscribe = null;
+			}
+		},
 		/** Yeni oda oluştur. Kullanıcı otomatik katılır, hero olur. */
-		create(name: string): Room | null {
+		async create(name: string): Promise<Room | null> {
 			const trimmed = name.trim();
 			if (trimmed.length === 0 || trimmed.length > 40) return null;
+
+			if (isFirebaseEnabled()) {
+				const created = await fb.createRoom(trimmed);
+				if (!created) return null;
+				saveLastJoinedId(created.id);
+				// subscribeMyRooms snapshot'u getirecek — biz de optimistic ekleyelim
+				const local: Room = {
+					id: created.id,
+					name: created.name,
+					members: 1,
+					createdAt: created.createdAt,
+					joinAt: Date.now(),
+					inviteCode: created.inviteCode
+				};
+				list = [local, ...list.filter((r) => r.id !== local.id)];
+				return local;
+			}
 
 			const now = Date.now();
 			const room: Room = {
@@ -150,18 +197,35 @@ function createRoomsStore() {
 				joinAt: now,
 				inviteCode: generateInviteCode()
 			};
-			list = [...list, room];
-			saveRooms(list);
+			list = [room, ...list];
+			saveLocal(list);
 			saveLastJoinedId(room.id);
 			return room;
 		},
-		/** Davet koduna göre odaya katıl. Kullanıcıyı ekler, hero yapar. */
-		joinByCode(code: string): Room | null {
+		/** Davet koduna göre odaya katıl. */
+		async joinByCode(code: string): Promise<Room | null> {
 			const target = code.trim().toUpperCase();
 			if (!target) return null;
+
+			if (isFirebaseEnabled()) {
+				const joined = await fb.joinRoomByCode(target);
+				if (!joined) return null;
+				saveLastJoinedId(joined.id);
+				const local: Room = {
+					id: joined.id,
+					name: joined.name,
+					members: 1,
+					createdAt: Date.now(),
+					joinAt: Date.now(),
+					inviteCode: joined.inviteCode
+				};
+				// list zaten subscribe ile gelecek ama yine de optimistic ekle
+				list = [local, ...list.filter((r) => r.id !== local.id)];
+				return local;
+			}
+
 			const idx = list.findIndex((r) => r.inviteCode === target);
 			if (idx === -1) return null;
-
 			const now = Date.now();
 			const updated: Room = {
 				...list[idx],
@@ -171,12 +235,18 @@ function createRoomsStore() {
 			const next = [...list];
 			next[idx] = updated;
 			list = next;
-			saveRooms(list);
+			saveLocal(list);
 			saveLastJoinedId(updated.id);
 			return updated;
 		},
-		/** Bir odayı "son katıldığım" yap — hero olsun. */
-		makeHero(roomId: string): boolean {
+		/** Bir odayı "son açılan" yap — D-014 hero. */
+		async makeHero(roomId: string): Promise<boolean> {
+			saveLastJoinedId(roomId);
+			if (isFirebaseEnabled()) {
+				await fb.touchRoom(roomId);
+				// subscribe snapshot ile gelecek
+				return true;
+			}
 			const idx = list.findIndex((r) => r.id === roomId);
 			if (idx === -1) return false;
 			const now = Date.now();
@@ -184,8 +254,7 @@ function createRoomsStore() {
 			const next = [...list];
 			next[idx] = updated;
 			list = next;
-			saveRooms(list);
-			saveLastJoinedId(roomId);
+			saveLocal(list);
 			return true;
 		}
 	};

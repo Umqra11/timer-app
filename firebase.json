@@ -1,0 +1,42 @@
+{
+	"hosting": {
+		"public": "build",
+		"ignore": [
+			"firebase.json",
+			"**/.*",
+			"**/node_modules/**"
+		],
+		"rewrites": [
+			{
+				"source": "**",
+				"destination": "/index.html"
+			}
+		],
+		"headers": [
+			{
+				"source": "**/*.@(js|css|woff2|svg|png|jpg|jpeg|gif|webp|ico)",
+				"headers": [
+					{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+				]
+			},
+			{
+				"source": "**/*.html",
+				"headers": [
+					{ "key": "Cache-Control", "value": "no-cache" }
+				]
+			}
+		]
+	},
+	"firestore": {
+		"rules": "firestore.rules",
+		"indexes": [
+			{
+				"collectionGroup": "rooms",
+				"queryScope": "COLLECTION",
+				"fields": [
+					{ "fieldPath": "inviteCode", "order": "ASCENDING" }
+				]
+			}
+		]
+	}
+}

@@ -1,40 +1,56 @@
 /**
  * Timer Store — MVP Kronometre
  * State machine: idle → running → paused → running → ... → idle
- * - Başlat: sayaç 0'dan ilerler
- * - Duraklat: sayaç durur, devam ettirilebilir
- * - Sıfırla: sayaç 0'a döner, idle
  *
  * Svelte 5 runes mode.
- * D-019: BroadcastChannel ile aynı tarayıcıdaki sekmeler arası state senkronizasyonu.
- * Bir sekme başlatınca/incelek hareket edince diğer sekmeler de gerisini alır.
  *
- * Sharding kuralı:
- *   - 100ms tick tek sekmeye sahip (en eski senderId = "sahip" kabul edilebilir değil —
- *     pratikte tick'i sadece çalışan sekme atar; duraklatan idempotent gelir)
- *   - Gelen tick, sahip sekmeyse yut; değilse elapsedMs'i snapshot olarak al.
- *     Bu sayede iki sekme paralel çalışmaz — en son hareket eden kazanır.
+ * D-019 — Çoklu sekme/cihaz davranışı:
+ *   - Aynı tarayıcıdaki sekmeler → BroadcastChannel (anında, anlık tick dahil).
+ *   - Farklı cihazlar → Firestore onSnapshot (state değişimlerinde snapshot).
+ *   - 100ms tick Firestore'a yazılmaz (maliyetli); yalnız state transition'larda.
+ *
+ * D-018 — Streak/totals `users/{uid}` doc'unda birikir, `finish()`'te
+ * touchStreak çağrılır.
  */
 
+import { isFirebaseEnabled } from '$lib/firebase/client';
+import * as presence from '$lib/firebase/presence';
+import * as stats from '$lib/firebase/stats';
 import { timerBroadcast } from '$lib/utils/broadcast.svelte';
 
 export type TimerStatus = 'idle' | 'running' | 'paused';
 
-const TICK_MS = 100; // 100ms hassasiyet (görsel akıcılık)
+const TICK_MS = 100;
+
+type RoomContext = { roomId: string; username: string } | null;
+// setInterval/clearInterval pair'inin dönüş/parametre tipleri browser'da number,
+// @types/node ortamlarında NodeJS.Timeout olur. clearInterval her iki tipi de
+// kabul eder; burada named type olarak adlandırıyoruz.
+export type IntervalHandle = Parameters<typeof clearInterval>[0];
 
 function createTimerStore() {
 	let status = $state<TimerStatus>('idle');
-	let elapsedMs = $state(0); // toplam biriken süre
-	let lastTickAt = $state<number | null>(null); // performance.now() snapshot
-	let intervalId: ReturnType<typeof setInterval> | null = null;
+	let elapsedMs = $state(0);
+	let lastTickAt = $state<number | null>(null);
+	let intervalId: IntervalHandle | null = null;
+	let roomCtx: RoomContext = null;
+	let unsubscribePresence: (() => void) | null = null;
 
-	// reaktif türetilmiş değerler
 	const displaySeconds = $derived(Math.floor(elapsedMs / 1000));
 
 	function clearTick() {
 		if (intervalId !== null) {
 			clearInterval(intervalId);
 			intervalId = null;
+		}
+	}
+
+	function pushToRemote() {
+		timerBroadcast.send({ type: 'tick', elapsedMs, status });
+		if (roomCtx) {
+			const presenceStatus: presence.PresenceStatus =
+				status === 'running' ? 'running' : status === 'paused' ? 'paused' : 'idle';
+			void presence.writePresence(roomCtx.roomId, roomCtx.username, presenceStatus, elapsedMs);
 		}
 	}
 
@@ -51,8 +67,6 @@ function createTimerStore() {
 	}
 
 	function applyRemote(state: { elapsedMs: number; status: TimerStatus }) {
-		// Gelen state'e tam uyum: tick'i durdur, değerleri al.
-		// running gelirse interval'ı yeniden başlat — sanki başka sekme bu sekmeyi "canlandırıyor".
 		clearTick();
 		elapsedMs = state.elapsedMs;
 		status = state.status;
@@ -82,48 +96,84 @@ function createTimerStore() {
 		get isIdle() {
 			return status === 'idle';
 		},
-		/** Başlat (idle veya paused'tan) */
+		/**
+		 * Hangi odaya presence yazacağımızı belirle. Dinlemeyi de başlatır:
+		 * odadaki diğer kullanıcıların state'leri callback'e düşer.
+		 */
+		setRoomContext(ctx: RoomContext, onRemote?: (p: presence.PresenceDoc[]) => void) {
+			roomCtx = ctx;
+			if (unsubscribePresence) {
+				unsubscribePresence();
+				unsubscribePresence = null;
+			}
+			if (!ctx || !isFirebaseEnabled() || !onRemote) return;
+			unsubscribePresence = presence.subscribeRoomPresence(ctx.roomId, onRemote);
+		},
+		dispose() {
+			if (unsubscribePresence) {
+				unsubscribePresence();
+				unsubscribePresence = null;
+			}
+			roomCtx = null;
+		},
 		start() {
 			if (status === 'running') return;
 			status = 'running';
 			startTick();
-			timerBroadcast.send({ type: 'tick', elapsedMs, status });
+			pushToRemote();
 		},
-		/** Duraklat (running'den) */
 		pause() {
 			if (status !== 'running') return;
 			clearTick();
-			// tick sırasında update'lenmemiş olabilir; final elapsedMs'i tamamla
 			if (lastTickAt !== null) {
 				elapsedMs += performance.now() - lastTickAt;
 				lastTickAt = null;
 			}
 			status = 'paused';
-			timerBroadcast.send({ type: 'tick', elapsedMs, status });
+			pushToRemote();
 		},
-		/** Devam ettir (paused'tan) */
 		resume() {
 			if (status !== 'paused') return;
 			status = 'running';
 			startTick();
-			timerBroadcast.send({ type: 'tick', elapsedMs, status });
+			pushToRemote();
 		},
-		/** Toggle: idle/paused ise start, running ise pause */
 		toggle() {
 			if (status === 'running') this.pause();
 			else this.start();
 		},
-		/** Sıfırla */
+		/**
+		 * "Bu seansı bitirdim" — 'finished' snapshot'ı yaz, stats'ı güncelle, idle'a çevir.
+		 * handleStop +page.svelte'te bunu çağırır, ardından kutlama modalı gösterilir.
+		 */
+		finish() {
+			const finalMs = elapsedMs;
+			clearTick();
+			lastTickAt = null;
+			if (roomCtx) {
+				void presence.writePresence(roomCtx.roomId, roomCtx.username, 'finished', finalMs);
+			}
+			const addedSeconds = Math.max(0, Math.floor(finalMs / 1000));
+			if (addedSeconds > 0) {
+				void stats.touchStreak(addedSeconds);
+			}
+			elapsedMs = 0;
+			status = 'idle';
+			pushToRemote();
+		},
 		reset() {
 			clearTick();
 			elapsedMs = 0;
 			status = 'idle';
 			lastTickAt = null;
-			timerBroadcast.send({ type: 'tick', elapsedMs, status });
+			pushToRemote();
 		},
-		/** Remote'dan gelen state'i yerel kanonuna al — D-019. */
+		/**
+		 * Remote state (BroadcastChannel) — D-019 aynı sekmeler.
+		 * `applyRemote` public API'de tutuluyor: bindRemote içinde `this.applyRemote`
+		 * referansı için gerekli.
+		 */
 		applyRemote,
-		/** BroadcastChannel'a abone ol — $effect içinden çağrılır. */
 		bindRemote() {
 			return timerBroadcast.subscribe((msg) => {
 				if (msg.type !== 'tick') return;

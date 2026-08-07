@@ -1,8 +1,22 @@
 /**
  * Username Store — D-015, D-016, D-024
- * localStorage'da username saklar. İlk ziyarette onboarding tetikler.
+ *
+ * Kayıt stratejisi:
+ *   1. localStorage'da username varsa, init orada başla.
+ *   2. Onboarding submit'te `claimUsername` Firestore transaction'ı çağrılır —
+ *      atomik olarak usernameler/{u} doc'u oluşturulur, çakışma varsa reddedilir.
+ *   3. Başarılı claim sonrası localStorage'a yazılır.
+ *
+ * Firebase config yoksa local-only mod: claim denemesi yapılmaz, sadece
+ * localStorage kullanılır (offline geliştirme).
+ *
  * Svelte 5 runes mode.
  */
+
+import { isFirebaseEnabled } from '$lib/firebase/client';
+import * as fb from '$lib/firebase/usernames';
+
+export type ClaimOutcome = 'ok' | 'taken' | 'invalid' | 'unavailable';
 
 const STORAGE_KEY = 'timer_username';
 
@@ -22,7 +36,6 @@ function clearUsername() {
 }
 
 function createUsernameStore() {
-	// $state — Svelte 5 reactive state
 	let value = $state<string | null>(loadUsername());
 
 	return {
@@ -32,12 +45,28 @@ function createUsernameStore() {
 		get isSet() {
 			return value !== null && value.length > 0;
 		},
-		set(newValue: string) {
-			const trimmed = newValue.trim();
-			if (trimmed.length === 0) return false;
-			saveUsername(trimmed);
-			value = trimmed;
-			return true;
+		/**
+		 * Username'i Firestore'da atomik olarak claim et.
+		 * - 'ok'         : claim başarılı, localStorage'a yazıldı
+		 * - 'taken'      : başka biri bu ismi çoktan almış (D-016)
+		 * - 'invalid'    : format hatalı
+		 * - 'unavailable': Firebase kapalı veya network hatası
+		 */
+		async claim(raw: string): Promise<ClaimOutcome> {
+			if (fb.validateUsername(raw)) return 'invalid';
+			if (isFirebaseEnabled()) {
+				const res = await fb.claimUsername(raw);
+				if (res.ok) {
+					saveUsername(raw.trim());
+					value = raw.trim();
+					return 'ok';
+				}
+				return res.reason;
+			}
+			// offline: local-only
+			saveUsername(raw.trim());
+			value = raw.trim();
+			return 'ok';
 		},
 		reset() {
 			clearUsername();

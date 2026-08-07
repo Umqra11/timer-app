@@ -16,6 +16,12 @@
 	let joinCode = $state('');
 	let copyFeedback = $state<string | null>(null);
 
+	// Firestore dinlemesini mount'ta başlat (offline'da no-op).
+	$effect(() => {
+		rooms.subscribe();
+		return () => rooms.dispose();
+	});
+
 	function openCreate() {
 		newName = '';
 		createOpen = true;
@@ -28,18 +34,19 @@
 		createOpen = false;
 		joinOpen = false;
 	}
-	function handleCreate() {
-		if (rooms.create(newName)) closeModals();
+	async function handleCreate() {
+		const created = await rooms.create(newName);
+		if (created) closeModals();
 	}
-	function handleJoin() {
-		const joined = rooms.joinByCode(joinCode);
+	async function handleJoin() {
+		const joined = await rooms.joinByCode(joinCode);
 		closeModals();
 		if (!joined) {
 			alert('Bu davet koduna sahip bir oda bulunamadı.');
 		}
 	}
-	function handleMakeHero(roomId: string) {
-		rooms.makeHero(roomId);
+	async function handleMakeHero(roomId: string) {
+		await rooms.makeHero(roomId);
 	}
 	async function copyCode(e: MouseEvent, code: string) {
 		e.stopPropagation();

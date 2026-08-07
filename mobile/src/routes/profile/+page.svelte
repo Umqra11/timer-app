@@ -1,15 +1,50 @@
 <!--
-  Profil sayfası — placeholder (Sprint-03'te doldurulacak)
-  D-018: streak + haftalık özet
+  Profil sayfası — D-018 istatistikleri + oturum kapatma.
+  Firebase'den streak, bugün ve toplam süre okunur; offline'da boş gösterilir.
 -->
 <script lang="ts">
 	import { username } from '$lib/stores/username.svelte';
 	import { goto } from '$app/navigation';
+	import { isFirebaseEnabled } from '$lib/firebase/client';
+	import { readStats } from '$lib/firebase/stats';
+	import { formatHumanDuration } from '$lib/utils/format';
+	import { onMount } from 'svelte';
+
+	let streak = $state(0);
+	let todaySeconds = $state(0);
+	let totalSeconds = $state(0);
+	let lastDayWorked = $state<string | null>(null);
+	let loading = $state(true);
+
+	onMount(async () => {
+		if (!isFirebaseEnabled()) {
+			loading = false;
+			return;
+		}
+		const s = await readStats();
+		streak = s.streak;
+		todaySeconds = s.weekSeconds;
+		totalSeconds = s.totalSeconds;
+		lastDayWorked = s.lastDayWorked;
+		loading = false;
+	});
 
 	function handleLogout() {
 		username.reset();
 		goto('/onboarding', { replaceState: true });
 	}
+
+	const todayText = $derived(formatHumanDuration(todaySeconds));
+	const totalText = $derived(formatHumanDuration(totalSeconds));
+	const streakActive = $derived(
+		lastDayWorked !== null &&
+			new Intl.DateTimeFormat('en-CA', {
+				timeZone: 'Europe/Istanbul',
+				year: 'numeric',
+				month: '2-digit',
+				day: '2-digit'
+			}).format(new Date()) === lastDayWorked
+	);
 </script>
 
 <div class="space-y-6 pt-4">
@@ -18,6 +53,7 @@
 		<p class="text-sm text-fg-muted">Hesap ayarları ve istatistiklerin</p>
 	</header>
 
+	<!-- Kullanıcı kartı -->
 	<div class="rounded-3xl border border-border bg-surface p-6">
 		<div class="flex items-center gap-4">
 			<div
@@ -27,14 +63,51 @@
 			</div>
 			<div>
 				<p class="text-lg font-semibold">{username.current}</p>
-				<p class="text-xs text-fg-subtle">Senkronize değil (Sprint-02'de)</p>
+				<p class="text-xs text-fg-subtle">
+					{isFirebaseEnabled() ? 'Senkronize (Firestore)' : 'Çevrimdışı mod'}
+				</p>
 			</div>
 		</div>
 	</div>
 
-	<div class="rounded-3xl border border-dashed border-border bg-surface p-6 text-sm text-fg-muted">
-		<p>📊 Haftalık özet ve seri (streak) bilgileri buraya gelecek — Sprint-03.</p>
-	</div>
+	<!-- İstatistikler — D-018 -->
+	{#if isFirebaseEnabled()}
+		<section class="space-y-3">
+			<h2 class="px-1 text-xs font-medium uppercase tracking-wider text-fg-subtle">
+				Bu hafta
+			</h2>
+			<div class="grid grid-cols-3 gap-3">
+				<!-- Streak -->
+				<div class="rounded-2xl border border-border bg-surface p-4 text-center">
+					<div class="text-2xl font-semibold tabular-nums">
+						{streak}
+					</div>
+					<div class="mt-1 text-[11px] text-fg-muted">gün üst üste</div>
+					{#if !streakActive && streak > 0}
+						<div class="mt-1 text-[10px] text-amber-400">bugün henüz yok</div>
+					{/if}
+				</div>
+				<!-- Bugün -->
+				<div class="rounded-2xl border border-border bg-surface p-4 text-center">
+					<div class="text-2xl font-semibold tabular-nums">
+						{loading ? '…' : todayText}
+					</div>
+					<div class="mt-1 text-[11px] text-fg-muted">bugün</div>
+				</div>
+				<!-- Toplam -->
+				<div class="rounded-2xl border border-border bg-surface p-4 text-center">
+					<div class="text-2xl font-semibold tabular-nums">
+						{loading ? '…' : totalText}
+					</div>
+					<div class="mt-1 text-[11px] text-fg-muted">toplam</div>
+				</div>
+			</div>
+		</section>
+	{:else}
+		<div class="rounded-3xl border border-dashed border-border bg-surface p-6 text-sm text-fg-muted">
+			<p>📊 İstatistikler için Firebase bağlantısı gerekli. .env.local'e VITE_FIREBASE_* ekle.</p>
+		</div>
+	{/if}
 
 	<button
 		onclick={handleLogout}

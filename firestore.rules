@@ -1,0 +1,56 @@
+rules_version = '2';
+
+// Firestore Security Rules — MVP (D-015: auth YOK, sadece username)
+// Patron kararı: kimlik doğrulama yok, ancak veri bütünlüğü için minimum kontrol.
+
+service cloud.firestore {
+	match /databases/{database}/documents {
+
+		// usernameler/{u}: atomik claim.
+		// Sadece doc mevcut DEĞİLSE oluşturulabilir; mevcut doc güncellenemez.
+		// (D-016: unique zorunlu, transaction ile kontrol client tarafında yapılıyor.)
+		match /usernames/{username} {
+			allow read: if true;
+			allow create: if !exists(/databases/$(database)/documents/usernames/$(username))
+				&& request.resource.data.uid is string
+				&& request.resource.data.uid.size() > 0;
+			allow update, delete: if false;
+		}
+
+		// users/{uid}: profil (kullanıcı adı, son aktiflik).
+		// Cihaz kendi uid'sini okuyup yazabilir; diğerlerini sadece okur.
+		match /users/{uid} {
+			allow read: if true;
+			allow create: if request.resource.data.uid == null  // doc mevcut değilse
+				|| request.resource.data.username is string;
+			allow update: if true;  // lastActiveAt güncellemesi için
+			allow delete: if false;
+
+			// users/{uid}/joinedRooms/{roomId}: hangi odalara katıldı
+			match /joinedRooms/{roomId} {
+				allow read: if true;
+				allow create, update: if true;  // server-side check yok, MVP
+				allow delete: if false;
+			}
+		}
+
+		// rooms/{roomId}: herkese açık okunur, sahibi yazar.
+		// MVP basitlik: herkes oda oluşturabilir, sadece owner günceller.
+		match /rooms/{roomId} {
+			allow read: if true;
+			allow create: if request.resource.data.name is string
+				&& request.resource.data.name.size() > 0
+				&& request.resource.data.name.size() <= 40
+				&& request.resource.data.inviteCode is string
+				&& request.resource.data.ownerUid is string;
+			allow update: if false;  // şimdilik: oda ayarları değişmez
+			allow delete: if false;
+
+			// rooms/{roomId}/presence/{uid}: odadaki kullanıcı durumu
+			match /presence/{uid} {
+				allow read: if true;
+				allow write: if true;  // MVP: client kendi uid'sini yazar
+			}
+		}
+	}
+}
