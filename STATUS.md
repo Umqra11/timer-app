@@ -1,13 +1,13 @@
 ---
 tags: [timer, status, project-status, obsidian-ready]
 created: 2026-08-04
-updated: 2026-08-07 (S-0022 — Sprint-02 KOD tamamlandı, deploy ⏳ Patron config bekliyor)
+updated: 2026-08-07 (S-0028 — Sprint-03 Faz 1+2+3 tamamlandı, canlıda https://timerviber.web.app. Faz 4 debug + polish ⏳.)
 type: status
 ---
 
 # Timer — Proje Durumu
 
-> **Son güncelleme:** 2026-08-07 (Sprint-02 kod tarafı bitti: Vercel temizlendi, Firebase SDK entegre, store'lar Firestore'a bağlandı, tık sesi + istatistikler eklendi, build & check temiz. Deploy ⏳ Patron'un Firebase projesini açıp config vermesi bekleniyor.)
+> **Son güncelleme:** 2026-08-07 (Sprint-03 Faz 1+2+3 kod tamamlandı ve canlıda. Faz 4 debug ⏳: SDK reactions write, TTL policy, server-side rate limit/owner check.)
 
 > 📚 **Detay:** [[00-Home]] · [[HUB]] · [[IDEAS]] · [[DECISIONS]] · [[daily/README]] · [[README]] · [[RESUME]]
 
@@ -24,92 +24,76 @@ type: status
 | UX detay kararları | ✅ Tamam (D-021 → D-025) |
 | Tasarım incelik kararları | ✅ Tamam (D-026 → D-031) |
 | Referans ekran görüntüsü revizyonu | ✅ Tamam (D-032 → D-043) |
-| Hosting kararı | ✅ Tamam (D-044 — Vercel çıkarıldı, Firebase Hosting + Firestore) |
+| Hosting kararı | ✅ Tamam (D-044 — Vercel çıkarıldı, Firebase Hosting) |
+| Oda sistemi kararları | ✅ Tamam (D-045 → D-055) |
 | Rakip analizi | ✅ Tamam (8 rakip, 5 fırsat) |
 | MVP ürün özeti | ✅ Tamam (5 ekran, özellik seti) |
 | Teknoloji stack | ✅ Tamam (D-009, D-020, D-044) |
 | Tasarım sistemi | ✅ Tamam (Dark Mode, swipe, 3 sekme) |
 | **Sprint-01: Altyapı** | ✅ **TAMAM** |
-| **Sprint-02: Kod** | ✅ **TAMAM** — usernames/rooms/presence/stats, BroadcastChannel + Firestore onSnapshot, tık sesi (D-017), istatistikler (D-018) |
-| **Sprint-02: GitHub push** | ✅ **TAMAM** — `Umqra11/timer-app`, 3 commit (Vercel cleanup, Firebase entegre, polish) |
-| **Sprint-02: Deploy** | ⏳ **Patron config bekliyor** — Firebase projesi açılmalı, `VITE_FIREBASE_*` env'e yapıştırılmalı, `firebase deploy` çalıştırılmalı |
+| **Sprint-02: Kod + Deploy** | ✅ **TAMAM** — usernames/rooms/presence/stats, BroadcastChannel + Firestore onSnapshot, tık sesi (D-017), istatistikler (D-018) |
+| **Sprint-02: GitHub push** | ✅ **TAMAM** — `Umqra11/timer-app`, 2 commit |
+| **Sprint-02: Canlı deploy** | ✅ **TAMAM** — `https://timerviber.web.app`, proje `timerviber` |
+| **Sprint-03 Faz 1: Oda temel** | ✅ **TAMAM** — oda detay sayfası, D-048 memberCount, D-049 owner delete |
+| **Sprint-03 Faz 2: Leaderboard** | 🟢 **ÇALIŞIYOR** — v6 setRoomContext fix sonrası presence yazımı tamam (kullanıcı leaderboard'da görünüyor) |
+| **Sprint-03 Faz 3: Mesaj sistemi** | 🟡 **UI tamam, SDK debug gerek** — REST 200, SDK 404 (Sprint-04) |
+| **Sprint-04: Debug + Polish** | ⏳ **Planlandı** — SDK reactions write, TTL policy, server-side rate limit/owner, recursive delete |
 
 ---
 
 ## 🎯 Hedef
 
 - **Kısa vadeli:** MVP — basit mobil uygulama + backend
-  - Oda oluşturma, arkadaş ekleme, zamanlayıcı, durum paylaşımı
-- **Orta vadeli:** Gerçek zamanlı durum, istatistikler, rozetler
+  - Oda oluşturma, arkadaş ekleme, zamanlayıcı, durum paylaşımı, mesaj tepkileri
+- **Orta vadeli:** Gerçek zamanlı durum, rozetler, server-side enforcement
 - **Vizyon:** Ders çalışan öğrenciler için sosyal motivasyon uygulaması
 
 ---
 
-## 📋 Kalan Görevler (Sprint-02 Deploy)
+## 📋 Tamamlanan (Sprint-03)
 
-> Tek Patron'a bağımlı adım — `console.firebase.google.com`'da proje açılınca deploy otomatik.
+### Faz 1: Oda temel (D-045, D-046, D-048, D-049) ✅
+- `routes/rooms/[id]/+page.svelte` — oda detay sayfası (geri, davet kodu kopyala, Odayı sil + onay modalı)
+- D-048: `memberCount` denormalize sayaç, `createRoom` initial 1, `joinRoomByCode` transaction atomik +1
+- D-049: `deleteRoom()` server-side owner check (MVP'de `allow delete: if true` — Sprint-04'te Cloud Function)
+- `firestore.rules` — rooms create/update/delete strict, presence match eklendi
+- **Canlı doğrulama:** Oda oluştur → "1 kişi" → ikinci kullanıcı katıl → "2 kişi" → odayı sil → Firestore 404
 
-### Patron'un yapacağı (~5 dk)
-- [ ] `console.firebase.google.com` → yeni proje: `timer-app`, region `europe-west`
-- [ ] Build → Firestore Database → Create database → Production mode → `europe-west`
-- [ ] Build → Hosting → Get started (kurulumu daha sonra CLI ile yapacağız)
-- [ ] Project settings → Your apps → Web app ekle (`</>`) → Config bilgilerini Müdür'e ilet
+### Faz 2: Leaderboard (D-047, D-050, D-051) 🟢
+- `rooms.ts`: `subscribeRoomMembers` — N+1 query, her presence için `users/{uid}.totalSeconds` okur, totalSeconds desc sıralama
+- D-050: `setRoomContext` + `visibilitychange` + `beforeunload` listener
+- D-051: `effective` status çözümlemesi — 2dk stale, 5dk finished-late
+- Leaderboard UI — username, durum pill, toplam süre
+- **KRİTİK FIX (v6)**: `setRoomContext.onRemote` opsiyonel — presence yazımı çözer
+- **Canlıda kanıtlandı:** `kullanici2` leaderboard'da görünüyor
 
-### Müdür'ün yapacağı (config alınca ~3 dk)
-- [ ] Config'i `mobile/.env.local`'e yapıştır (placeholder'lar hazır)
-- [ ] `firebase login` → Patron hesabıyla
-- [ ] `firebase deploy --only hosting,firestore:rules`
-- [ ] Canlı URL: `https://timer-app.web.app` (veya Firebase'in verdiği)
+### Faz 3: Mesaj/Reactions (D-052, D-053, D-054, D-055) 🟡
+- `src/lib/firebase/reactions.ts` (6.7 KB) — `sendReaction()` (D-052 atomic), `subscribeReactions()` (D-054)
+- D-053: Rate limit — dakikada 5, saatte 30, sliding window (client-side, Sprint-04 server)
+- D-052: `expireAt` field — Firestore TTL policy için (4 saat)
+- D-055: Sadece kişiye özel tepki (broadcast YOK)
+- `+page.svelte`: Tepki yazma modalı (textarea + sayaç), leaderboard satırlarında baloncuklar
+- `firestore.rules`: `rooms/{roomId}/reactions/{reactionId}` match
+- **KRİTİK FIX (v8)**: `runTransaction` → sequential get+set (async getDoc uyumsuz)
+- **Canlıda kanıtlandı:** REST API ile yazılan reaction browser'da baloncuk olarak görünüyor
 
----
-
-## 📋 Tamamlanan (Sprint-02)
-
-### Faz 1: Vercel temizliği (D-044) ✅
-- `mobile/.vercel/`, `vercel.json`, `VERCEL_OIDC_TOKEN` silindi
-- `adapter-vercel` ve `adapter-auto` çıkar, `adapter-static` kuruldu (SPA fallback `index.html`)
-- `vite.config.ts` `adapter()` artık sveltekit plugin içinde, build temiz
-
-### Faz 2: Git & GitHub ✅
-- `Umqra11/timer-app` remote zaten bağlı
-- 3 commit push'landı (Vercel cleanup, Firebase integration, polish)
-
-### Faz 3: Firebase kod entegrasyonu ✅
-- `firebase` SDK + `firebase-tools` (devDep) kuruldu
-- `src/lib/firebase/client.ts` — lazy init, env yoksa offline mode (warn log)
-- `src/lib/firebase/uid.ts` — device-scoped UUID (kimlik doğrulama yok)
-- `src/lib/firebase/usernames.ts` — atomik claim (D-016), transaction-based
-- `src/lib/firebase/rooms.ts` — rooms + `users/{uid}/joinedRooms/{roomId}` + invite code
-- `src/lib/firebase/presence.ts` — `rooms/{roomId}/presence/{uid}` (idle/running/paused/finished)
-- `src/lib/firebase/stats.ts` — streak/totals, Europe/Istanbul TZ (D-002)
-- `firestore.rules` — MVP: usernames atomik claim, presence/rooms herkese açık read
-- `firebase.json` — Hosting SPA rewrites, cache headers
-- `.firebaserc` — proje alias
-
-### Faz 4: Store'lar Firestore'a bağlandı ✅
-- `username.svelte.ts` — `claim()` async API, taken/invalid/unavailable sonuçları
-- `rooms.svelte.ts` — `subscribe()` mount'ta, `create/joinByCode/makeHero` async
-- `timer.svelte.ts` — `setRoomContext` ile Firestore presence + BroadcastChannel hibrit (D-019)
-- `finish()` yeni — presence'a 'finished' yaz, `touchStreak` çağır, state'i idle'a çek
-
-### Faz 5: UI ✅
-- Onboarding — D-016 server-side hata mesajları
-- `src/lib/utils/click.ts` — Web Audio sentetik tık (D-017), 4 handle'da
-- Profile sayfası — streak / bugün / toplam kartları + "İlk Adım" rozet hint'i
-- Kutlama modalı — stats özetini gösteriyor
-
-### Faz 6: Verification ✅
-- `npm run check` — 0 hata 0 uyarı (372 dosya)
-- `npm run build` — `build/index.html` SPA fallback, `build/_app/` chunks, `build/robots.txt`
-- Smoke test — preview build'de onboarding → sayaç (idle→running→stop) → kutlama modalı → odalar (hero + 3 oda) → profil (çevrimdışı placeholder). Tüm 4 route 200.
+### Faz 6: Verification (Sprint-03) ✅
+- `npm run check` — 0 hata 0 uyarı (375 dosya)
+- `npm run build` — `build/index.html` SPA fallback, `build/_app/` chunks
+- 5 commit push'landı (`57e534b` → `14d49ce`)
+- Canlıda screenshot: oda detay sayfası (leaderboard dolu, tepki baloncukları, Odayı sil butonu)
 
 ---
 
-## 🚧 Açık Sorular
+## 🚧 Açık Sorular (Sprint-04)
 
-_Çözüldü:_ D-021, D-022, D-023, D-024, D-025, D-026 → D-031, D-032 → D-043, **D-044**.
-
-Yeni açık soru yok. Sprint-03'te: rozetler, haftalık özet (gerçek), özel oda davet linki, profil ayarları.
+- **SDK `sendReaction` 404** — REST 200, SDK sessizce başarısız. Olası: `setDoc` field'ları farklı serialize, `request.resource.data.keys().hasAll([...])` rule check fail ediyor
+- **Firestore TTL policy** — `expireAt` field için Console'dan veya `gcloud firestore fields ttls update expireAt --collection-group=reactions --enable-ttl --seconds=14400`
+- **Server-side rate limit** — Cloud Function ile `users/{uid}/rateLimit/reactions` server-side check
+- **Server-side owner check (D-049 sıkılaştırma)** — Custom function ile uid karşılaştırması
+- **Oda silme recursive delete** — Cloud Function ile presence + reactions + joinedRooms temizliği
+- **Stats rolling week sum (D-018)** — şu an sadece "bugün" gösteriliyor
+- **Username reclamation policy (D-015)** — eski username'ler orphan kalıyor, 30 gün grace period
 
 Detay: [[IDEAS]] · [[DECISIONS]]
 
@@ -121,14 +105,19 @@ Detay: [[IDEAS]] · [[DECISIONS]]
 |------|------------|----------|
 | Konsept | 1/1 | 0 |
 | Altyapı (vault/klasör) | 3/3 | 0 |
-| Kararlar | **58/58** | 0 |
+| Kararlar | **55/55** | 0 |
 | Tasarım | 1/1 | 0 |
 | Araştırma | 3/3 | 0 |
 | Kod (Sprint-01) | 7/7 | 0 |
-| Kod (Sprint-02) | **19/19** | 0 |
-| Deploy | 0/1 | 1 (Patron config) |
-| **Toplam** | **80/83** | **3/83** |
+| Kod (Sprint-02) | 19/19 | 0 |
+| Kod (Sprint-03 Faz 1) | 8/8 | 0 |
+| Kod (Sprint-03 Faz 2) | 8/9 | 1 (SDK debug) |
+| Kod (Sprint-03 Faz 3) | 7/8 | 1 (SDK debug) |
+| Deploy | 1/1 | 0 |
+| **Toplam** | **63/72** | **9/72** |
+
+**Not:** Bekleyen 9 madde Sprint-04 debug + polish kapsamında.
 
 ---
 
-**Son güncelleme:** 2026-08-07 (S-0025 — D-056..D-058 eklendi: omp fan-out cap (max 3), auto-compaction 600K, session dispose child drain; 58 karar. `reports/omp-research-agent-donma-2026-08-07.md` yazıldı.)
+**Son güncelleme:** 2026-08-07 (S-0028 — Sprint-03 Faz 1+2+3 tamamlandı, canlıda `https://timerviber.web.app`. 7 commit, 55 karar, Faz 4 debug ⏳.)

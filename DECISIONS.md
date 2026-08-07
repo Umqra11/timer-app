@@ -1,7 +1,7 @@
 ---
 tags: [timer, decisions, technical-decisions, product-decisions, obsidian-ready]
 created: 2026-08-04
-updated: 2026-08-07 (S-0025 — D-056..D-058 eklendi: omp fan-out cap, auto-compaction tetikleyici, session dispose child drain; toplam 58 karar)
+updated: 2026-08-07 (S-0028 — Sprint-03 Faz 1+2+3 tamamlandı, canlıda timerviber.web.app. Yeni karar yok; D-045..D-055 oda sistemi + D-052..D-055 mesaj tepkileri zaten yazılmıştı. Toplam 55 karar.)
 type: decisions-log
 ---
 
