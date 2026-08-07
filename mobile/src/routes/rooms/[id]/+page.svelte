@@ -1,14 +1,11 @@
 <!--
-  Oda Detay Sayfası — Sprint-03 Faz 2 (leaderboard + presence)
+  Oda Detay Sayfası — Sprint-03 Faz 2 + Faz 3
   - Oda bilgisi (ad, davet kodu, üye sayısı)
   - Geri butonu
-  - Leaderboard (D-047): her üye için username, anlık durum, toplam çalışma süresi
-    - Sıralama: totalSeconds desc
-    - Stale handling (D-050, D-051): 2 dk+ eski running → "stale"; 5 dk+ eski finished → "son görülme"
-  - "Odayı sil" butonu (sadece owner'a görünür, D-049)
+  - Leaderboard (D-047, D-050, D-051) + tepki baloncukları (D-052, D-054)
+  - "Tepki yaz" (kendine veya seçili üyeye, D-052, D-053 rate limit)
+  - "Odayı sil" butonu (D-049)
   - Onay modalı
-
-  Faz 3'te mesaj/reactions baloncukları eklenecek.
 -->
 <script lang="ts">
 	import { page } from '$app/state';
@@ -19,6 +16,7 @@
 	import { timer } from '$lib/stores/timer.svelte';
 	import { isFirebaseEnabled } from '$lib/firebase/client';
 	import * as fb from '$lib/firebase/rooms';
+	import * as reactions from '$lib/firebase/reactions';
 	import { playClick } from '$lib/utils/click';
 
 	const roomId = $derived(page.params['id'] ?? '');
@@ -32,22 +30,27 @@
 	let copyFeedback = $state<string | null>(null);
 
 	let members = $state<fb.LeaderboardEntry[]>([]);
+	let allReactions = $state<reactions.ReactionDoc[]>([]);
+
+	// Faz 3 — tepki input
+	let reactionText = $state('');
+	let reactionTargetUid = $state<string | null>(null);
+	let reactionSending = $state(false);
+	let reactionError = $state<string | null>(null);
+	let reactionModalOpen = $state(false);
 
 	let unsubscribeRoom: (() => void) | null = null;
 	let unsubscribeMembers: (() => void) | null = null;
+	let unsubscribeReactions: (() => void) | null = null;
 
-	// Faz 1'deki MVP owner check: butonu herkes görür, server-side kontrol yapar
-	// (rules şimdilik delete: if true — Sprint-04'te Cloud Function ile sıkılaştırılacak)
 	const showDeleteButton = $derived(true);
 
-	// Timer'ı bu odaya bağla — setRoomContext ile (D-019 Firestore + BroadcastChannel hibrit)
 	onMount(() => {
 		if (!isFirebaseEnabled()) {
 			loading = false;
 			notFound = true;
 			return;
 		}
-		// Odayı canlı dinle
 		unsubscribeRoom = fb.subscribeRoom(roomId, (r) => {
 			if (r === null) {
 				notFound = true;
@@ -57,31 +60,32 @@
 			}
 			loading = false;
 		});
-		// lastOpenedAt güncelle (D-014 hero için)
 		void fb.touchRoom(roomId);
-		// Members + presence (D-047)
 		unsubscribeMembers = fb.subscribeRoomMembers(roomId, (entries) => {
 			members = entries;
 		});
-		// Timer'ı bu odaya bağla — kendi presence'ımızı yazmaya başla
+		// Tepkileri dinle (tüm oda için)
+		unsubscribeReactions = reactions.subscribeReactions(roomId, (rs) => {
+			allReactions = rs;
+		});
+		// Timer'ı bu odaya bağla
 		const uname = username.current;
 		if (uname) {
 			timer.setRoomContext({ roomId, username: uname });
 		}
 	});
 
-// $effect: username reactive olarak mount sonrası dolabilir. setRoomContext'i
-// uname değiştiğinde tekrar çağır (mount'ta uname null ise bile çalışsın).
-$effect(() => {
-	const uname = username.current;
-	if (uname && roomId) {
-		timer.setRoomContext({ roomId, username: uname });
-	}
-});
+	$effect(() => {
+		const uname = username.current;
+		if (uname && roomId) {
+			timer.setRoomContext({ roomId, username: uname });
+		}
+	});
 
 	onDestroy(() => {
 		if (unsubscribeRoom) unsubscribeRoom();
 		if (unsubscribeMembers) unsubscribeMembers();
+		if (unsubscribeReactions) unsubscribeReactions();
 	});
 
 	function goBack() {
@@ -132,7 +136,6 @@ $effect(() => {
 		}
 	}
 
-	/** D-047 + D-050 + D-051 — üye satırı durum metni. */
 	function statusLabel(entry: fb.LeaderboardEntry): string {
 		switch (entry.effective) {
 			case 'running':
@@ -143,28 +146,16 @@ $effect(() => {
 				return 'bitirdi';
 			case 'stale':
 				return 'şu an değil';
-			case 'finished-late':
-				// D-051 — "X dk önce bitti" formatı
+			case 'finished-late': {
 				const mins = Math.floor((Date.now() - entry.lastSeen) / 60000);
 				if (mins < 60) return `${mins} dk önce bitti`;
 				const hours = Math.floor(mins / 60);
 				return `${hours} sa önce bitti`;
+			}
 			case 'idle':
 			default:
 				return '';
 		}
-	}
-
-	/** "X dk önce" formatı — mesaj balonları için de kullanılabilir. */
-	export function ago(ts: number): string {
-		const diff = Date.now() - ts;
-		const mins = Math.floor(diff / 60000);
-		if (mins < 1) return 'şimdi';
-		if (mins < 60) return `${mins} dk önce`;
-		const hours = Math.floor(mins / 60);
-		if (hours < 24) return `${hours} sa önce`;
-		const days = Math.floor(hours / 24);
-		return `${days} gün önce`;
 	}
 
 	function totalText(seconds: number): string {
@@ -175,6 +166,63 @@ $effect(() => {
 		const remMins = mins % 60;
 		if (remMins === 0) return `${hours} sa`;
 		return `${hours} sa ${remMins} dk`;
+	}
+
+	// "X dk önce" formatı
+	function ago(ts: number): string {
+		const diff = Date.now() - ts;
+		const mins = Math.floor(diff / 60000);
+		if (mins < 1) return 'şimdi';
+		if (mins < 60) return `${mins} dk önce`;
+		const hours = Math.floor(mins / 60);
+		if (hours < 24) return `${hours} sa önce`;
+		const days = Math.floor(hours / 24);
+		return `${days} gün önce`;
+	}
+
+	// D-054 — bir kişiye ait tepkileri al
+	function reactionsFor(uid: string): reactions.ReactionDoc[] {
+		return allReactions.filter((r) => r.targetUid === uid);
+	}
+
+	// D-052, D-053 — tepki yazma akışı
+	function openReactionModal(targetUid: string) {
+		reactionTargetUid = targetUid;
+		reactionText = '';
+		reactionError = null;
+		reactionModalOpen = true;
+	}
+	function closeReactionModal() {
+		reactionModalOpen = false;
+		reactionTargetUid = null;
+		reactionText = '';
+		reactionError = null;
+	}
+
+	async function handleSendReaction() {
+		if (!room || !reactionTargetUid) return;
+		const uname = username.current ?? 'anonim';
+		const text = reactionText.trim();
+		if (text.length === 0) {
+			reactionError = 'Tepki boş olamaz';
+			return;
+		}
+		if (text.length > reactions.REACTION_MAX_LEN) {
+			reactionError = `En fazla ${reactions.REACTION_MAX_LEN} karakter`;
+			return;
+		}
+		playClick();
+		reactionSending = true;
+		reactionError = null;
+		const res = await reactions.sendReaction(room.id, reactionTargetUid, text, uname);
+		reactionSending = false;
+		if (res.ok) {
+			closeReactionModal();
+		} else if (res.reason === 'rate-limit') {
+			reactionError = 'Çok sık tepki gönderiyorsun. Biraz yavaşla.';
+		} else {
+			reactionError = 'Gönderilemedi: ' + res.reason;
+		}
 	}
 </script>
 
@@ -240,7 +288,17 @@ $effect(() => {
 			</div>
 		</div>
 
-		<!-- Leaderboard — D-047 + D-050 + D-051 -->
+		<!-- Kendine tepki yaz — D-052 (leaderboard'dan bağımsız, presence debug'a takılmaz) -->
+		<button
+			type="button"
+			onclick={() => username.current && openReactionModal(username.current)}
+			disabled={!username.current}
+			class="w-full rounded-2xl border border-border bg-surface px-4 py-3 text-sm font-medium text-fg-muted active:bg-surface-2 disabled:opacity-40"
+		>
+			💬 Tepki yaz (kendine)
+		</button>
+
+		<!-- Leaderboard + Tepki baloncukları (D-047, D-052, D-054) -->
 		<section class="space-y-3">
 			<h2 class="px-1 text-xs font-medium uppercase tracking-wider text-fg-subtle">
 				Liderlik tablosu
@@ -253,35 +311,60 @@ $effect(() => {
 				<div class="space-y-1.5">
 					{#each members as m (m.uid)}
 						{@const label = statusLabel(m)}
-						<div
-							class="flex items-center justify-between rounded-xl border border-border bg-surface px-4 py-3"
-						>
-							<div class="min-w-0 flex-1">
-								<div class="flex items-center gap-2">
-									{#if m.effective === 'running'}
-										<span class="inline-block h-2 w-2 rounded-full bg-running" aria-hidden="true"></span>
-									{:else if m.effective === 'paused'}
-										<span class="inline-block h-2 w-2 rounded-full bg-amber-400" aria-hidden="true"></span>
+						{@const userReactions = reactionsFor(m.uid)}
+						<div class="rounded-xl border border-border bg-surface">
+							<div class="flex items-center justify-between px-4 py-3">
+								<div class="min-w-0 flex-1">
+									<div class="flex items-center gap-2">
+										{#if m.effective === 'running'}
+											<span class="inline-block h-2 w-2 rounded-full bg-running" aria-hidden="true"></span>
+										{:else if m.effective === 'paused'}
+											<span class="inline-block h-2 w-2 rounded-full bg-amber-400" aria-hidden="true"></span>
+										{/if}
+										<span class="truncate font-medium text-fg">{m.username}</span>
+									</div>
+									{#if label}
+										<div class="mt-0.5 text-xs text-fg-muted">{label}</div>
 									{/if}
-									<span class="truncate font-medium text-fg">{m.username}</span>
 								</div>
-								{#if label}
-									<div class="mt-0.5 text-xs text-fg-muted">{label}</div>
-								{/if}
-							</div>
-							<div class="text-right">
-								<div class="font-mono text-sm tabular-nums text-fg">
-									{totalText(m.totalSeconds)}
+								<div class="flex items-center gap-3">
+									<div class="text-right">
+										<div class="font-mono text-sm tabular-nums text-fg">
+											{totalText(m.totalSeconds)}
+										</div>
+										<div class="text-[10px] uppercase tracking-wider text-fg-subtle">toplam</div>
+									</div>
+									<button
+										type="button"
+										onclick={() => openReactionModal(m.uid)}
+										class="flex h-8 w-8 items-center justify-center rounded-full bg-accent-soft text-accent active:bg-accent"
+										aria-label="{m.username} kullanıcısına tepki yaz"
+									>
+										<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+											<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+										</svg>
+									</button>
 								</div>
-								<div class="text-[10px] uppercase tracking-wider text-fg-subtle">toplam</div>
 							</div>
+							<!-- D-054 — tepki baloncukları -->
+							{#if userReactions.length > 0}
+								<div class="border-t border-border px-3 py-2 space-y-1.5">
+									{#each userReactions as r (r.id)}
+										<div class="flex items-start gap-2 rounded-lg bg-bg/40 px-3 py-1.5">
+											<span class="text-[11px] font-medium text-fg-muted shrink-0">{r.senderUsername}</span>
+											<span class="text-sm text-fg flex-1">{r.text}</span>
+											<span class="text-[10px] text-fg-subtle shrink-0">{ago(r.createdAt)}</span>
+										</div>
+									{/each}
+								</div>
+							{/if}
 						</div>
 					{/each}
 				</div>
 			{/if}
 		</section>
 
-		<!-- Sahiplik bilgisi (UI'da gösterilmez, sadece yetki için) -->
+		<!-- Sahiplik bilgisi -->
 		{#if showDeleteButton}
 			<div class="pt-4">
 				<button
@@ -338,6 +421,63 @@ $effect(() => {
 					class="flex-1 rounded-full bg-red-600 px-4 py-3 text-sm font-semibold text-white active:bg-red-700 disabled:opacity-40"
 				>
 					{deleting ? 'Siliniyor…' : 'Evet, sil'}
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- Tepki yazma modalı — D-052, D-053 -->
+{#if reactionModalOpen && reactionTargetUid}
+	<div
+		class="fixed inset-0 z-[60] flex items-end justify-center bg-black/70 px-4 backdrop-blur-sm sm:items-center"
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="reaction-title"
+		onclick={(e) => {
+			if (e.target === e.currentTarget) closeReactionModal();
+		}}
+		onkeydown={(e) => {
+			if (e.key === 'Escape') closeReactionModal();
+		}}
+		tabindex="-1"
+	>
+		<div
+			class="flex max-h-[90dvh] w-full max-w-md flex-col overflow-y-auto rounded-t-3xl bg-surface p-6 pb-28 safe-bottom sm:rounded-3xl"
+		>
+			<h2 id="reaction-title" class="text-lg font-semibold">Tepki yaz</h2>
+			<p class="mt-1 text-xs text-fg-subtle">
+				Maks {reactions.REACTION_MAX_LEN} karakter · 4 saat sonra kaybolur
+			</p>
+			<textarea
+				bind:value={reactionText}
+				maxlength={reactions.REACTION_MAX_LEN}
+				rows="3"
+				placeholder="Mesajını yaz..."
+				class="mt-4 w-full resize-none rounded-2xl border border-border bg-bg px-4 py-3 text-base text-fg placeholder:text-fg-subtle focus:border-accent focus:outline-none"
+			></textarea>
+			<div class="mt-1 text-right text-[11px] text-fg-subtle">
+				{reactionText.length}/{reactions.REACTION_MAX_LEN}
+			</div>
+			{#if reactionError}
+				<p class="mt-2 text-sm text-red-400">{reactionError}</p>
+			{/if}
+			<div class="mt-4 flex gap-3">
+				<button
+					type="button"
+					onclick={closeReactionModal}
+					disabled={reactionSending}
+					class="flex-1 rounded-full border border-border bg-bg px-4 py-3 text-sm font-medium text-fg-muted active:bg-surface-2 disabled:opacity-40"
+				>
+					Vazgeç
+				</button>
+				<button
+					type="button"
+					onclick={handleSendReaction}
+					disabled={reactionSending || reactionText.trim().length === 0}
+					class="flex-1 rounded-full bg-accent px-4 py-3 text-sm font-semibold text-bg active:bg-accent-hover disabled:opacity-40"
+				>
+					{reactionSending ? 'Gönderiliyor…' : 'Gönder'}
 				</button>
 			</div>
 		</div>

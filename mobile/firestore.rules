@@ -53,9 +53,28 @@ service cloud.firestore {
 			allow delete: if true;
 
 			// rooms/{roomId}/presence/{uid}: odadaki kullanıcı durumu (D-019, D-047)
+			// rooms/{roomId}/presence/{uid}: odadaki kullanıcı durumu (D-019, D-047)
 			match /presence/{uid} {
 				allow read: if true;
 				allow write: if true;  // MVP: herkes yazabilir
+			}
+
+			// rooms/{roomId}/reactions/{reactionId}: kısa tepkiler (D-052, D-053)
+			//   - text 1-60 karakter
+			//   - expireAt: timestamp (Firestore TTL policy, 4 saat sonra silinir)
+			match /reactions/{reactionId} {
+				allow read: if true;
+				// MVP: text 1-60, expireAt zorunlu (D-052 TTL için)
+				// is timestamp check rate limit'i zorlaştırıyor, MVP'de basit
+				allow create: if request.resource.data.keys()
+					.hasAll(['targetUid', 'senderUid', 'senderUsername', 'text', 'createdAt', 'expireAt'])
+					&& request.resource.data.targetUid is string
+					&& request.resource.data.senderUid is string
+					&& request.resource.data.senderUsername is string
+					&& request.resource.data.text is string
+					&& request.resource.data.text.size() > 0
+					&& request.resource.data.text.size() <= 60;
+				allow update, delete: if false;
 			}
 		}
 	}
