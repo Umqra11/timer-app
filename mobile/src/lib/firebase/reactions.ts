@@ -24,7 +24,6 @@ import {
 	getDoc,
 	onSnapshot,
 	query,
-	runTransaction,
 	serverTimestamp,
 	setDoc,
 	where
@@ -39,7 +38,8 @@ const RATE_LIMIT = 'rateLimit';
 export const RATE_PER_MINUTE = 5;
 export const RATE_PER_HOUR = 30;
 export const REACTION_MAX_LEN = 60;
-export const REACTION_TTL_MS = 4 * 60 * 60 * 1000; // 4 saat
+/** D-052 — TTL 4 saat (Firestore TTL policy ile expireAt alanı okunur) */
+export const REACTION_TTL_MS = 4 * 60 * 60 * 1000;
 
 export type ReactionDoc = {
 	id: string;
@@ -103,9 +103,13 @@ async function writeRateLimit(uid: string, state: RateLimitState): Promise<void>
 
 /**
  * Tepki gönder — D-052, D-053.
- * Atomik: rate limit check + write transaction içinde yapılır (yarış koşulu
- * önlenir). Yeni kullanıcılar (rateLimit doc yok) sınırsız başlar — Sprint-04'te
- * Cloud Function ile sıkılaştırılacak.
+ *
+ * İki adımlı: önce rate limit check (okuma), sonra tepki yaz (yazma). Yeni
+ * kullanıcılar (rateLimit doc yok) sınırsız başlar. Race condition kabul
+ * edilebilir (D-053 client-side, Sprint-04 Cloud Function ile sıkılaştırılacak).
+ *
+ * `runTransaction` async getDoc ile uyumsuz (tx.get sadece aynı transaction'daki
+ * doc'ları okuyabilir, rate limit doc farklı collection'da).
  */
 export async function sendReaction(
 	roomId: string,
@@ -123,61 +127,39 @@ export async function sendReaction(
 
 	const uid = getDeviceUid();
 	const reactionId = crypto.randomUUID();
-	const now = Date.now();
-	const expireAt = now + REACTION_TTL_MS;
+	const expireAt = Date.now() + REACTION_TTL_MS;
 
 	try {
-		await runTransaction(db, async (tx) => {
-			// Rate limit kontrol
-			const rl = await readRateLimit(uid);
-			const refreshed: RateLimitState = { ...rl };
+		// 1) Rate limit kontrol
+		const rl = await readRateLimit(uid);
+		const nowMs = Date.now();
+		const refreshed: RateLimitState = {
+			minuteCount: nowMs >= rl.minuteResetAt ? 0 : rl.minuteCount,
+			minuteResetAt: nowMs >= rl.minuteResetAt ? nowMs + 60_000 : rl.minuteResetAt,
+			hourCount: nowMs >= rl.hourResetAt ? 0 : rl.hourCount,
+			hourResetAt: nowMs >= rl.hourResetAt ? nowMs + 60 * 60_000 : rl.hourResetAt
+		};
+		if (refreshed.minuteCount >= RATE_PER_MINUTE) {
+			return { ok: false, reason: 'rate-limit' };
+		}
+		if (refreshed.hourCount >= RATE_PER_HOUR) {
+			return { ok: false, reason: 'rate-limit' };
+		}
+		refreshed.minuteCount += 1;
+		refreshed.hourCount += 1;
+		await writeRateLimit(uid, refreshed);
 
-			// Window expired ise reset
-			const nowMs = Date.now();
-			if (nowMs >= rl.minuteResetAt) {
-				refreshed.minuteCount = 0;
-				refreshed.minuteResetAt = nowMs + 60_000;
-			}
-			if (nowMs >= rl.hourResetAt) {
-				refreshed.hourCount = 0;
-				refreshed.hourResetAt = nowMs + 60 * 60_000;
-			}
-
-			// Limit check
-			if (refreshed.minuteCount >= RATE_PER_MINUTE) {
-				throw new Error('rate-limit-minute');
-			}
-			if (refreshed.hourCount >= RATE_PER_HOUR) {
-				throw new Error('rate-limit-hour');
-			}
-
-			refreshed.minuteCount += 1;
-			refreshed.hourCount += 1;
-
-			// Reaction doc oluştur
-			tx.set(doc(db, `rooms/${roomId}/${REACTIONS}/${reactionId}`), {
-				targetUid,
-				senderUid: uid,
-				senderUsername,
-				text: trimmed,
-				createdAt: serverTimestamp(),
-				expireAt: new Date(expireAt)
-			});
-			// Rate counter güncelle
-			tx.set(doc(db, `users/${uid}/${RATE_LIMIT}/reactions`), {
-				minuteCount: refreshed.minuteCount,
-				minuteResetAt: refreshed.minuteResetAt,
-				hourCount: refreshed.hourCount,
-				hourResetAt: refreshed.hourResetAt
-			});
+		// 2) Tepki doc'u yaz — TTL için expireAt field'ı
+		await setDoc(doc(db, `rooms/${roomId}/${REACTIONS}/${reactionId}`), {
+			targetUid,
+			senderUid: uid,
+			senderUsername,
+			text: trimmed,
+			createdAt: serverTimestamp(),
+			expireAt: new Date(expireAt)
 		});
 		return { ok: true, reactionId };
 	} catch (err) {
-		if (err instanceof Error) {
-			if (err.message === 'rate-limit-minute' || err.message === 'rate-limit-hour') {
-				return { ok: false, reason: 'rate-limit' };
-			}
-		}
 		console.error('[reactions] send failed', err);
 		return { ok: false, reason: 'unavailable' };
 	}
