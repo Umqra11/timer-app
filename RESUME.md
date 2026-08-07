@@ -1,7 +1,7 @@
 ---
 tags: [timer, resume, session-handoff, obsidian-ready]
 created: 2026-08-04
-updated: 2026-08-07 (S-0025 — Sprint-03 Faz 1-2: oda detay sayfası, D-048 memberCount, D-049 owner delete, D-050 visibilitychange, D-047 leaderboard UI; deploy edildi, canlıda https://timerviber.web.app/rooms/0d0aafd0 (testus/kullanici2 simülasyonu). Faz 2'de presence yazımı smoke testte tam görülmedi, debug Sprint-04'te.)
+updated: 2026-08-07 (S-0026 — Sprint-03 Faz 2 debug denemesi: timer.svelte.ts intervalId tip karmaşası çözüldü (TickHandle alias), $effect ile setRoomContext reactive. Presence doc Firestore'a yine yazılmıyor (404), Sprint-04'te root cause araştırılacak — setRoomContext mount'ta çalışmıyor olabilir. Faz 3'e geçmeden önce debug gerekli.)
 
 type: session-resume
 ---

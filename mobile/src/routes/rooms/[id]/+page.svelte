@@ -70,6 +70,15 @@
 		}
 	});
 
+// $effect: username reactive olarak mount sonrası dolabilir. setRoomContext'i
+// uname değiştiğinde tekrar çağır (mount'ta uname null ise bile çalışsın).
+$effect(() => {
+	const uname = username.current;
+	if (uname && roomId) {
+		timer.setRoomContext({ roomId, username: uname });
+	}
+});
+
 	onDestroy(() => {
 		if (unsubscribeRoom) unsubscribeRoom();
 		if (unsubscribeMembers) unsubscribeMembers();

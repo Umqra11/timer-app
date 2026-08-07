@@ -4,13 +4,9 @@
  *
  * Svelte 5 runes mode.
  *
- * D-019 — Çoklu sekme/cihaz davranışı:
- *   - Aynı tarayıcıdaki sekmeler → BroadcastChannel (anında, anlık tick dahil).
- *   - Farklı cihazlar → Firestore onSnapshot (state değişimlerinde snapshot).
- *   - 100ms tick Firestore'a yazılmaz (maliyetli); yalnız state transition'larda.
- *
- * D-018 — Streak/totals `users/{uid}` doc'unda birikir, `finish()`'te
- * touchStreak çağrılır.
+ * D-019 — Çoklu sekme/cihaz senkronu (BroadcastChannel + Firestore).
+ * D-018 — Streak/totals, finish()'te touchStreak.
+ * D-050 — visibilitychange + beforeunload listener.
  */
 
 import { isFirebaseEnabled } from '$lib/firebase/client';
@@ -22,17 +18,16 @@ export type TimerStatus = 'idle' | 'running' | 'paused';
 
 const TICK_MS = 100;
 
-type RoomContext = { roomId: string; username: string } | null;
-// setInterval/clearInterval pair'inin dönüş/parametre tipleri browser'da number,
-// @types/node ortamlarında NodeJS.Timeout olur. clearInterval her iki tipi de
-// kabul eder; burada named type olarak adlandırıyoruz.
-export type IntervalHandle = Parameters<typeof clearInterval>[0];
+export type RoomContext = { roomId: string; username: string } | null;
 
 function createTimerStore() {
-	let status = $state<TimerStatus>('idle');
+	let status: TimerStatus = $state('idle');
 	let elapsedMs = $state(0);
-	let lastTickAt = $state<number | null>(null);
-	let intervalId: IntervalHandle | null = null;
+	let lastTickAt: number | null = $state(null);
+	// setInterval tipi browser'da number, @types/node'da Timeout.
+	// clearInterval her iki tipi de kabul eder. Union ile her iki ortamda çalışır.
+	type TickHandle = number | ReturnType<typeof setInterval>;
+	let intervalId: TickHandle | null = null;
 	let roomCtx: RoomContext = null;
 	let unsubscribePresence: (() => void) | null = null;
 
@@ -48,9 +43,9 @@ function createTimerStore() {
 	function pushToRemote() {
 		timerBroadcast.send({ type: 'tick', elapsedMs, status });
 		if (roomCtx) {
-			const presenceStatus: presence.PresenceStatus =
+			const ps: presence.PresenceStatus =
 				status === 'running' ? 'running' : status === 'paused' ? 'paused' : 'idle';
-			void presence.writePresence(roomCtx.roomId, roomCtx.username, presenceStatus, elapsedMs);
+			void presence.writePresence(roomCtx.roomId, roomCtx.username, ps, elapsedMs);
 		}
 	}
 
@@ -97,11 +92,9 @@ function createTimerStore() {
 			return status === 'idle';
 		},
 		/**
-		 * Hangi odaya presence yazacağımızı belirle. Dinlemeyi de başlatır:
-		 * odadaki diğer kullanıcıların state'leri callback'e düşer.
-		 * D-050: visibilitychange + beforeunload listener ekler — sayfa gizlendiğinde
-		 * veya kapanırken presence'ı 'idle' yazar. Stale kalmayı önler.
-		 * Sayfaya girildiğinde hemen 'idle' presence yazılır (leaderboard'da görünelim).
+		 * Hangi odaya presence yazacağımızı belirle. Dinlemeyi de başlatır.
+		 * D-050: visibilitychange + beforeunload listener ekler.
+		 * Sayfaya girildiğinde hemen 'idle' presence yazılır.
 		 */
 		setRoomContext(ctx: RoomContext, onRemote?: (p: presence.PresenceDoc[]) => void) {
 			roomCtx = ctx;
@@ -111,9 +104,7 @@ function createTimerStore() {
 			}
 			if (!ctx || !isFirebaseEnabled() || !onRemote) return;
 			unsubscribePresence = presence.subscribeRoomPresence(ctx.roomId, onRemote);
-			// Sayfada bulunduğumuzu hemen 'idle' olarak bildir
 			void presence.writePresence(ctx.roomId, ctx.username, 'idle', 0);
-			// D-050 — page lifecycle listener'ları
 			if (typeof window === 'undefined') return;
 			const onVisibility = () => {
 				if (document.visibilityState === 'hidden' && roomCtx) {
@@ -127,7 +118,6 @@ function createTimerStore() {
 			};
 			document.addEventListener('visibilitychange', onVisibility);
 			window.addEventListener('beforeunload', onBeforeUnload);
-			// dispose'da temizle
 			(unsubscribePresence as unknown as { _cleanup: () => void })._cleanup = () => {
 				document.removeEventListener('visibilitychange', onVisibility);
 				window.removeEventListener('beforeunload', onBeforeUnload);
@@ -159,10 +149,6 @@ function createTimerStore() {
 			if (status === 'running') this.pause();
 			else this.start();
 		},
-		/**
-		 * "Bu seansı bitirdim" — 'finished' snapshot'ı yaz, stats'ı güncelle, idle'a çevir.
-		 * handleStop +page.svelte'te bunu çağırır, ardından kutlama modalı gösterilir.
-		 */
 		finish() {
 			const finalMs = elapsedMs;
 			clearTick();
@@ -185,11 +171,6 @@ function createTimerStore() {
 			lastTickAt = null;
 			pushToRemote();
 		},
-		/**
-		 * Remote state (BroadcastChannel) — D-019 aynı sekmeler.
-		 * `applyRemote` public API'de tutuluyor: bindRemote içinde `this.applyRemote`
-		 * referansı için gerekli.
-		 */
 		applyRemote,
 		bindRemote() {
 			return timerBroadcast.subscribe((msg) => {

@@ -6,7 +6,7 @@
  *
  * Schema:
  *   - status: 'idle' | 'running' | 'paused' | 'finished'
- *   - elapsedMs: number   (son session'ın birikmiş süresi)
+ *   - elapsedMs: number   (son session'ın birikmiş süre)
  *   - username: string    (presence listesinde göstermek için — denormalize)
  *   - updatedAt: timestamp
  *
@@ -31,7 +31,7 @@ export type PresenceDoc = {
 	username: string;
 	status: PresenceStatus;
 	elapsedMs: number;
-	updatedAt: number; // unix ms (yerelde resolve edilir)
+	updatedAt: number;
 };
 
 const presenceRef = (roomId: string, uid: string) =>
@@ -45,15 +45,22 @@ export async function writePresence(
 	elapsedMs: number
 ): Promise<void> {
 	const db = getDb();
-	if (!db) return;
+	if (!db) { console.log('[presence] no db'); return; }
 	const uid = getDeviceUid();
-	await setDoc(doc(db, presenceRef(roomId, uid)), {
-		uid,
-		username,
-		status,
-		elapsedMs,
-		updatedAt: serverTimestamp()
-	});
+	try {
+		await setDoc(doc(db, presenceRef(roomId, uid)), {
+			uid,
+			username,
+			status,
+			elapsedMs,
+			updatedAt: serverTimestamp()
+		});
+	} catch (e: unknown) {
+		const msg = e instanceof Error ? e.message : String(e);
+		const code = (e as { code?: string })?.code || '?';
+		console.error('[presence] ERR', code, msg);
+		throw e;
+	}
 }
 
 /** Odadaki tüm presence'ları canlı dinle. */
@@ -87,7 +94,6 @@ export function subscribeRoomPresence(
 					updatedAt: data.updatedAt?.toMillis?.() ?? Date.now()
 				});
 			}
-			// updatedAt desc — en yeni hareket üstte
 			items.sort((a, b) => b.updatedAt - a.updatedAt);
 			cb(items);
 		},
