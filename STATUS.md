@@ -121,14 +121,14 @@ Detay: [[IDEAS]] · [[DECISIONS]]
 |------|------------|----------|
 | Konsept | 1/1 | 0 |
 | Altyapı (vault/klasör) | 3/3 | 0 |
-| Kararlar | **44/44** | 0 |
+| Kararlar | **58/58** | 0 |
 | Tasarım | 1/1 | 0 |
 | Araştırma | 3/3 | 0 |
 | Kod (Sprint-01) | 7/7 | 0 |
 | Kod (Sprint-02) | **19/19** | 0 |
 | Deploy | 0/1 | 1 (Patron config) |
-| **Toplam** | **77/80** | **3/80** |
+| **Toplam** | **80/83** | **3/83** |
 
 ---
 
-**Son güncelleme:** 2026-08-07 (S-0022 — Sprint-02 KOD tamamlandı, GitHub push'landı, deploy ⏳ Patron config bekliyor)
+**Son güncelleme:** 2026-08-07 (S-0025 — D-056..D-058 eklendi: omp fan-out cap (max 3), auto-compaction 600K, session dispose child drain; 58 karar. `reports/omp-research-agent-donma-2026-08-07.md` yazıldı.)

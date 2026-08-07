@@ -1,7 +1,7 @@
 ---
 tags: [timer, decisions, technical-decisions, product-decisions, obsidian-ready]
 created: 2026-08-04
-updated: 2026-08-07 (S-0024 — D-048..D-055 eklendi: oda üye sayacı, oda silme, stale presence, bitirdi timeout, mesaj sistemi; toplam 55 karar)
+updated: 2026-08-07 (S-0025 — D-056..D-058 eklendi: omp fan-out cap, auto-compaction tetikleyici, session dispose child drain; toplam 58 karar)
 type: decisions-log
 ---
 
@@ -616,4 +616,40 @@ type: decisions-log
 - **Gerekçe:** Oda genelinde mesaj kirlilik yaratır, kişiye özel tepki daha anlamlı.
 - **Etki:** `targetUid` her zaman zorunlu. "Odaya genel" butonu yok.
 
+### D-056 · omp subagent fan-out cap (max 3 paralel)
+- **Tarih:** 2026-08-07
+- **Bağlam:** S-0025'te 6 paralel scout fan-out parent oturumunu çökertti (4 saat 12 dk askı, 6 tombstone). 3 paralel (51486) sağlıklı, 2+2 dalga (bu oturum) sağlıklı. 5+ paralel omp penceresi + 6 fan-out = felaket.
+- **Karar:** 🎯 **omp fan-out cap = 3 paralel scout aynı anda**:
+  - `tasks[]` batch'inde 3'ten fazla scout olmamalı
+  - 4+ gerekiyorsa 2+2 veya 3+2 dalga halinde, dalga arası bekleme ile
+  - 6+ gerekiyorsa 2+2+2 veya 3+3 (toplam 6, 2-3 dalga)
+  - Tek dalga 6+ = ❌ YASAK
+- **Gerekçe:** 6 paralel fan-out parent 4+ saat askıda bırakıyor, pendingToolCalls temizlenmeden tombstone yazılıyor. 3 ve altı temiz tamamlanıyor.
+- **Veri:** Bkz. `reports/omp-research-agent-donma-2026-08-07.md` (2+2 test, 51486 baseline, 25062 hasta vaka).
+- **Etki:** Patron'a 6+ scout tek batch istediğinde "önce 3'lü dalga deneyelim, gerekirse arttırırız" önerisi. omp runSubagent PR'ı gelecekte hard limit ekleyebilir.
+
+### D-057 · omp auto-compaction tetikleyici (600K hard limit)
+- **Tarih:** 2026-08-07
+- **Bağlam:** 9 saatlik oturumda (8474 PID) context 50K → 394K büyüdü, `Auto-compaction threshold shouldCompact:false` 9 saat sıfır sıkıştırma. Threshold 850K ama hiç tetiklenmedi. 12:13'te `finish_reason` provider error bu düşük kalitenin semptomu.
+- **Karar:** 🧹 **omp auto-compaction agresif tetiklensin**:
+  - M3 1M context'in **%60'ı (600K)** → zorla compact
+  - Her 5K token artışında kontrol
+  - `shouldCompact:false` flag'i kaldırılsın veya `forceCompact:600000` parametresi eklensin
+- **Gerekçe:** 1M context var diye 9 saatlik oturum açmak mantıklı değil — omp'ın alt yapısı (UI loop, todo nudge, finish_reason) 1M'ı kaldırmıyor. 600K = güvenli tavan.
+- **Etki:** Uzun oturumlar artık stabil. 600K geçilince kullanıcı "compaction performed" bilgilendirmesi alır. omp runSubagent PR'ı gelecekte bu threshold'u varsayılan yapabilir.
+- **Pratik:** Patron'a bildirimi: "Oturum 2-3 saatte bir yenilensin. 600K sıkıştırma da yeterli olmazsa, eski session kapatılır."
+
+### D-058 · omp session dispose'da child drain (graceful shutdown)
+- **Tarih:** 2026-08-07
+- **Bağlam:** 25062 PID'inde parent 12:25'te 6 scout fırlattı, 16:37'de dispose oldu — arada **4 saat 12 dakika** bekleme. `Post-prompt tasks still draining at dispose deadline error: Timed out draining post-prompt tasks during dispose`. 6 scout `.tombstone` ile öldürüldü, kullanıcı "donuyor" gördü.
+- **Karar:** 💀 **Session dispose'da 30s grace period**:
+  - Parent kapanırken çocuklara `PARENT_DISPOSING` sinyali gönder
+  - 30s bekle, çocuklar pendingToolCalls'i bitirsin
+  - 30s sonrası hâlâ yaşayanlar tombstone ile temiz ölsün
+  - Kullanıcıya "Disposing, 30s grace" mesajı göster
+- **Gerekçe:** Şu anki "aniden kapat" davranışı yarım kalmış görev bırakıyor. 30s = çoğu subagent görevi için yeterli. Tamamlanmayanlar temiz ölür, "donuyor" görüntüsü kaybolur.
+- **Etki:** Yarım kalmış 6 scout artık ya tamamlanır (en iyi) ya da 30s içinde net biçimde ölür. Kullanıcı tarafında "donuyor" → "kapanıyor, 30s" net davranışı.
+- **Pratik:** omp PR'ı bu protokolü uygulayana kadar, Patron'a öneri: 6 scout fan-out'tan kaçınılsın (D-056), 5+ omp penceresi tek seferde açılmasın.
+
 ---
+

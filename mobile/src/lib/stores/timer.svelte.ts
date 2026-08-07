@@ -24,12 +24,13 @@ function createTimerStore() {
 	let status: TimerStatus = $state('idle');
 	let elapsedMs = $state(0);
 	let lastTickAt: number | null = $state(null);
-	// setInterval tipi browser'da number, @types/node'da Timeout.
-	// clearInterval her iki tipi de kabul eder. Union ile her iki ortamda çalışır.
+	// setInterval browser'da number, @types/node'da Timeout döndürür. Union ile
+	// her iki ortamda typecheck temiz, runtime'da clearInterval her iki tipi de kabul eder.
 	type TickHandle = number | ReturnType<typeof setInterval>;
 	let intervalId: TickHandle | null = null;
 	let roomCtx: RoomContext = null;
 	let unsubscribePresence: (() => void) | null = null;
+	let detachLifecycle: (() => void) | null = null;
 
 	const displaySeconds = $derived(Math.floor(elapsedMs / 1000));
 
@@ -92,19 +93,39 @@ function createTimerStore() {
 			return status === 'idle';
 		},
 		/**
-		 * Hangi odaya presence yazacağımızı belirle. Dinlemeyi de başlatır.
-		 * D-050: visibilitychange + beforeunload listener ekler.
-		 * Sayfaya girildiğinde hemen 'idle' presence yazılır.
+		 * Hangi odaya presence yazacağımızı belirle.
+		 * - onRemote callback verilmişse odanın presence'ını dinler
+		 * - her durumda hemen kendi presence'ımızı 'idle' olarak yazar (D-050)
+		 * - visibilitychange + beforeunload listener ekler (D-050)
+		 *
+		 * HATA: Önceki sürümde `if (!onRemote) return;` vardı — bu yüzden
+		 * `setRoomContext` callback verilmeden çağrıldığında presence
+		 * yazılmıyordu. Şimdi callback opsiyonel.
 		 */
 		setRoomContext(ctx: RoomContext, onRemote?: (p: presence.PresenceDoc[]) => void) {
 			roomCtx = ctx;
+
+			// Önceki subscription'ı temizle
 			if (unsubscribePresence) {
 				unsubscribePresence();
 				unsubscribePresence = null;
 			}
-			if (!ctx || !isFirebaseEnabled() || !onRemote) return;
-			unsubscribePresence = presence.subscribeRoomPresence(ctx.roomId, onRemote);
+			if (detachLifecycle) {
+				detachLifecycle();
+				detachLifecycle = null;
+			}
+
+			if (!ctx || !isFirebaseEnabled()) return;
+
+			// Subscribe (callback verilmişse)
+			if (onRemote) {
+				unsubscribePresence = presence.subscribeRoomPresence(ctx.roomId, onRemote);
+			}
+
+			// Kendi presence'ımızı yaz — leaderboard'da görünelim
 			void presence.writePresence(ctx.roomId, ctx.username, 'idle', 0);
+
+			// D-050 — page lifecycle listener'ları
 			if (typeof window === 'undefined') return;
 			const onVisibility = () => {
 				if (document.visibilityState === 'hidden' && roomCtx) {
@@ -118,7 +139,7 @@ function createTimerStore() {
 			};
 			document.addEventListener('visibilitychange', onVisibility);
 			window.addEventListener('beforeunload', onBeforeUnload);
-			(unsubscribePresence as unknown as { _cleanup: () => void })._cleanup = () => {
+			detachLifecycle = () => {
 				document.removeEventListener('visibilitychange', onVisibility);
 				window.removeEventListener('beforeunload', onBeforeUnload);
 			};

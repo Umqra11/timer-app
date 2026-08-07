@@ -119,7 +119,7 @@ Timer/
 ├── 00-Home.md          ← vault giriş
 ├── HUB.md              ← vault kuralları
 ├── STATUS.md           ← proje durumu (güncel)
-├── DECISIONS.md        ← 44 karar
+├── DECISIONS.md        ← 58 karar
 ├── IDEAS.md            ← beyin fırtınası
 ├── RESUME.md           ← BU DOSYA — yeni session için
 ├── daily/              ← günlük notlar
@@ -219,7 +219,7 @@ Timer/
 
 ---
 
-**Son güncelleme:** 2026-08-07 (S-0021 sonu — D-044 ile Vercel tamamen çıkarıldı, Firebase Hosting tek platform oldu; Sprint-02 planı yeniden yazıldı)
+**Son güncelleme:** 2026-08-07 (S-0025 — D-056..D-058 eklendi: omp fan-out cap (max 3), auto-compaction 600K, session dispose child drain. 58 karar. `reports/omp-research-agent-donma-2026-08-07.md` yazıldı.)
 **Patron:** Enes
 **Müdür:** Mavis
 **Sıradaki sprint:** Sprint-02 — Vercel temizliği + Firebase Hosting + Firestore bağlantısı
