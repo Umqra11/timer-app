@@ -99,6 +99,9 @@ function createTimerStore() {
 		/**
 		 * Hangi odaya presence yazacağımızı belirle. Dinlemeyi de başlatır:
 		 * odadaki diğer kullanıcıların state'leri callback'e düşer.
+		 * D-050: visibilitychange + beforeunload listener ekler — sayfa gizlendiğinde
+		 * veya kapanırken presence'ı 'idle' yazar. Stale kalmayı önler.
+		 * Sayfaya girildiğinde hemen 'idle' presence yazılır (leaderboard'da görünelim).
 		 */
 		setRoomContext(ctx: RoomContext, onRemote?: (p: presence.PresenceDoc[]) => void) {
 			roomCtx = ctx;
@@ -108,13 +111,27 @@ function createTimerStore() {
 			}
 			if (!ctx || !isFirebaseEnabled() || !onRemote) return;
 			unsubscribePresence = presence.subscribeRoomPresence(ctx.roomId, onRemote);
-		},
-		dispose() {
-			if (unsubscribePresence) {
-				unsubscribePresence();
-				unsubscribePresence = null;
-			}
-			roomCtx = null;
+			// Sayfada bulunduğumuzu hemen 'idle' olarak bildir
+			void presence.writePresence(ctx.roomId, ctx.username, 'idle', 0);
+			// D-050 — page lifecycle listener'ları
+			if (typeof window === 'undefined') return;
+			const onVisibility = () => {
+				if (document.visibilityState === 'hidden' && roomCtx) {
+					void presence.writePresence(roomCtx.roomId, roomCtx.username, 'idle', 0);
+				}
+			};
+			const onBeforeUnload = () => {
+				if (roomCtx) {
+					void presence.writePresence(roomCtx.roomId, roomCtx.username, 'idle', 0);
+				}
+			};
+			document.addEventListener('visibilitychange', onVisibility);
+			window.addEventListener('beforeunload', onBeforeUnload);
+			// dispose'da temizle
+			(unsubscribePresence as unknown as { _cleanup: () => void })._cleanup = () => {
+				document.removeEventListener('visibilitychange', onVisibility);
+				window.removeEventListener('beforeunload', onBeforeUnload);
+			};
 		},
 		start() {
 			if (status === 'running') return;

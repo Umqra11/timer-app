@@ -28,15 +28,6 @@
 		]
 	},
 	"firestore": {
-		"rules": "firestore.rules",
-		"indexes": [
-			{
-				"collectionGroup": "rooms",
-				"queryScope": "COLLECTION",
-				"fields": [
-					{ "fieldPath": "inviteCode", "order": "ASCENDING" }
-				]
-			}
-		]
+		"rules": "firestore.rules"
 	}
 }

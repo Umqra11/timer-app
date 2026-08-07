@@ -5,24 +5,24 @@
  *   rooms/{roomId}
  *     - name: string
  *     - ownerUid: string
- *     - inviteCode: string (6 char base36, üst küçük harf + rakam)
+ *     - inviteCode: string (6 char base32 — I,O,0,1 çıkarıldı, karışıklık önleme)
  *     - createdAt: timestamp
+ *     - memberCount: number    (D-048 — denormalize sayaç, atomik increment)
  *
  *   users/{uid}/joinedRooms/{roomId}
  *     - joinedAt: timestamp
  *     - lastOpenedAt: timestamp
  *
- * Üye listesi oda doc'unda tutulmuyor — `users/{uid}/joinedRooms` üzerinden
- * türetiliyor. Bu sayede "kaç kişi var" sorusu için count query yeterli,
- * üye listesi için reverse lookup (kim bu odaya katılmış) içinse kullanıcı
- * adına ihtiyaç olursa usernames koleksiyonundan join yapılır.
+ *   rooms/{roomId}/presence/{uid}     — D-019 cross-device timer senkronu
+ *   rooms/{roomId}/reactions/{rid}    — D-052 kısa tepkiler (Sprint-03 Faz 3)
  *
- * Şimdilik MVP için basit tutuldu: odadaki "presence" (kim şu an online/çalışıyor)
- * ayrı bir subcollection'da — bkz. presence.ts.
+ * Üye listesi `users/{uid}/joinedRooms` üzerinden türetilir; `memberCount`
+ * sayaç doc'u O(1) read sağlar.
  */
 
 import {
 	collection,
+	deleteDoc,
 	doc,
 	getDoc,
 	getDocs,
@@ -31,6 +31,7 @@ import {
 	runTransaction,
 	serverTimestamp,
 	setDoc,
+	updateDoc,
 	where
 } from 'firebase/firestore';
 import { getDb } from './client';
@@ -39,7 +40,7 @@ import { getDeviceUid } from './uid';
 const ROOMS = 'rooms';
 const JOINED = 'joinedRooms';
 
-const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // karışıklık yapan karakterler çıkarıldı (I,O,0,1)
+const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const INVITE_LEN = 6;
 
 function generateInviteCode(): string {
@@ -57,9 +58,9 @@ export type RoomMeta = {
 	name: string;
 	ownerUid: string;
 	inviteCode: string;
-	createdAt: number; // unix ms (serverTimestamp client tarafında doldurulmaz; null ise fallback Date.now())
+	createdAt: number;
 	memberCount: number;
-	joinedAt?: number; // kullanıcının bu odaya katıldığı zaman
+	joinedAt?: number;
 };
 
 /** Oda oluştur, otomatik üye ol, last-opened'ı şimdiye çek. */
@@ -78,6 +79,7 @@ export async function createRoom(name: string): Promise<RoomMeta | null> {
 			name: trimmed,
 			ownerUid: uid,
 			inviteCode,
+			memberCount: 1,
 			createdAt: serverTimestamp()
 		});
 		tx.set(doc(db, `users/${uid}/${JOINED}/${id}`), {
@@ -96,7 +98,7 @@ export async function createRoom(name: string): Promise<RoomMeta | null> {
 	};
 }
 
-/** Davet koduna göre oda bul, katıl. Bulunamazsa null. */
+/** Davet koduna göre oda bul, katıl. */
 export async function joinRoomByCode(inviteCode: string): Promise<RoomMeta | null> {
 	const code = inviteCode.trim().toUpperCase();
 	if (code.length !== INVITE_LEN) return null;
@@ -108,13 +110,18 @@ export async function joinRoomByCode(inviteCode: string): Promise<RoomMeta | nul
 	const snap = await getDocs(q);
 	if (snap.empty) return null;
 	const roomDoc = snap.docs[0];
-	const data = roomDoc.data() as { name: string; ownerUid: string; inviteCode: string };
+	const data = roomDoc.data() as { name: string; ownerUid: string; inviteCode: string; memberCount?: number };
 	const roomId = roomDoc.id;
 
-	// Üye ol
-	await setDoc(doc(db, `users/${uid}/${JOINED}/${roomId}`), {
-		joinedAt: serverTimestamp(),
-		lastOpenedAt: serverTimestamp()
+	await runTransaction(db, async (tx) => {
+		const ref = doc(db, `${ROOMS}/${roomId}`);
+		const fresh = await tx.get(ref);
+		if (!fresh.exists()) throw new Error('room-vanished');
+		tx.set(doc(db, `users/${uid}/${JOINED}/${roomId}`), {
+			joinedAt: serverTimestamp(),
+			lastOpenedAt: serverTimestamp()
+		});
+		tx.update(ref, { memberCount: (fresh.data()['memberCount'] ?? 0) + 1 });
 	});
 
 	return {
@@ -123,11 +130,10 @@ export async function joinRoomByCode(inviteCode: string): Promise<RoomMeta | nul
 		ownerUid: data.ownerUid,
 		inviteCode: data.inviteCode,
 		createdAt: Date.now(),
-		memberCount: 1 // gerçek count aşağıda sayılır
+		memberCount: (data.memberCount ?? 0) + 1
 	};
 }
 
-/** Kullanıcının katıldığı odalar — last-opened desc. */
 export function subscribeMyRooms(
 	cb: (rooms: RoomMeta[]) => void
 ): () => void {
@@ -153,6 +159,7 @@ export function subscribeMyRooms(
 					name: string;
 					ownerUid: string;
 					inviteCode: string;
+					memberCount?: number;
 				};
 				const meta = d.data() as { joinedAt?: { toMillis?: () => number }; lastOpenedAt?: { toMillis?: () => number } };
 				items.push({
@@ -161,11 +168,10 @@ export function subscribeMyRooms(
 					ownerUid: data.ownerUid,
 					inviteCode: data.inviteCode,
 					createdAt: Date.now(),
-					memberCount: 0,
+					memberCount: data.memberCount ?? 0,
 					joinedAt: meta.joinedAt?.toMillis?.() ?? Date.now()
 				});
 			}
-			// lastOpenedAt desc
 			items.sort((a, b) => (b.joinedAt ?? 0) - (a.joinedAt ?? 0));
 			cb(items);
 		},
@@ -176,24 +182,55 @@ export function subscribeMyRooms(
 	);
 }
 
-/** Tek bir odayı getir. */
 export async function getRoom(roomId: string): Promise<RoomMeta | null> {
 	const db = getDb();
 	if (!db) return null;
 	const snap = await getDoc(doc(db, `${ROOMS}/${roomId}`));
 	if (!snap.exists()) return null;
-	const data = snap.data() as { name: string; ownerUid: string; inviteCode: string };
+	const data = snap.data() as { name: string; ownerUid: string; inviteCode: string; memberCount?: number };
 	return {
 		id: roomId,
 		name: data.name,
 		ownerUid: data.ownerUid,
 		inviteCode: data.inviteCode,
 		createdAt: Date.now(),
-		memberCount: 0
+		memberCount: data.memberCount ?? 0
 	};
 }
 
-/** Odanın son açılma zamanını güncelle (D-014 hero için). */
+export function subscribeRoom(
+	roomId: string,
+	cb: (room: RoomMeta | null) => void
+): () => void {
+	const db = getDb();
+	if (!db) {
+		cb(null);
+		return () => {};
+	}
+	return onSnapshot(
+		doc(db, `${ROOMS}/${roomId}`),
+		(snap) => {
+			if (!snap.exists()) {
+				cb(null);
+				return;
+			}
+			const data = snap.data() as { name: string; ownerUid: string; inviteCode: string; memberCount?: number };
+			cb({
+				id: roomId,
+				name: data.name,
+				ownerUid: data.ownerUid,
+				inviteCode: data.inviteCode,
+				createdAt: Date.now(),
+				memberCount: data.memberCount ?? 0
+			});
+		},
+		(err) => {
+			console.error('[rooms] subscribeRoom error', err);
+			cb(null);
+		}
+	);
+}
+
 export async function touchRoom(roomId: string): Promise<void> {
 	const db = getDb();
 	if (!db) return;
@@ -205,7 +242,6 @@ export async function touchRoom(roomId: string): Promise<void> {
 	);
 }
 
-/** Kullanıcının last-opened (D-014 hero) oda id'si. */
 export async function getLastOpenedRoomId(): Promise<string | null> {
 	const db = getDb();
 	if (!db) return null;
@@ -224,4 +260,123 @@ export async function getLastOpenedRoomId(): Promise<string | null> {
 		}
 	}
 	return bestId;
+}
+
+export async function deleteRoom(roomId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+	const db = getDb();
+	if (!db) return { ok: false, reason: 'unavailable' };
+	const uid = getDeviceUid();
+
+	const roomRef = doc(db, `${ROOMS}/${roomId}`);
+	const snap = await getDoc(roomRef);
+	if (!snap.exists()) return { ok: false, reason: 'not-found' };
+	const data = snap.data() as { ownerUid: string };
+	if (data.ownerUid !== uid) return { ok: false, reason: 'forbidden' };
+
+	// joinedRooms referansı orphan bırakılıyor (rules: delete: if false). Sprint-04
+	// Cloud Function ile recursive delete.
+	await deleteDoc(roomRef);
+	return { ok: true };
+}
+
+/* ---------------------------------------------------------------------------
+ * Leaderboard — D-047, D-050, D-051
+ * ------------------------------------------------------------------------- */
+
+/** Stale timeout (D-050) — bu kadar eski 'running' kayıtları 'stale' sayılır. */
+export const STALE_TIMEOUT_MS = 2 * 60 * 1000; // 2 dk
+/** "Bitirdi" timeout (D-051) — 5 dk sonra 'finished' 'boş' gibi gösterilir. */
+export const FINISHED_TIMEOUT_MS = 5 * 60 * 1000; // 5 dk
+
+import type { PresenceStatus } from './presence';
+
+export type EffectiveStatus =
+	| 'running'
+	| 'paused'
+	| 'finished'
+	| 'stale'
+	| 'finished-late'
+	| 'idle';
+
+export type LeaderboardEntry = {
+	uid: string;
+	username: string;
+	totalSeconds: number;
+	status: PresenceStatus;
+	effective: EffectiveStatus;
+	elapsedMs: number;
+	lastSeen: number;
+};
+
+/** Client tarafında staleness çözümlemesi (D-050 + D-051). */
+function resolveEffective(
+	status: PresenceStatus,
+	lastSeen: number,
+	now: number
+): EffectiveStatus {
+	const age = now - lastSeen;
+	if (status === 'finished' && age > FINISHED_TIMEOUT_MS) return 'finished-late';
+	if (status === 'running' && age > STALE_TIMEOUT_MS) return 'stale';
+	return status;
+}
+
+/**
+ * Odanın leaderboard'unu canlı dinle — D-047.
+ * - Her presence için `presence.username` (denormalize) + `users/{uid}.totalSeconds` okur
+ * - N+1 query ama üye sayısı küçük (kabul edilebilir)
+ * - effective status (D-050/D-051) client-side hesaplanır
+ * - Sıralama: totalSeconds desc, sonra username asc
+ */
+export function subscribeRoomMembers(
+	roomId: string,
+	cb: (entries: LeaderboardEntry[]) => void
+): () => void {
+	const db = getDb();
+	if (!db) {
+		cb([]);
+		return () => {};
+	}
+	return onSnapshot(
+		collection(db, `rooms/${roomId}/presence`),
+		async (snap) => {
+			const now = Date.now();
+			const raw: LeaderboardEntry[] = [];
+			for (const d of snap.docs) {
+				const data = d.data() as {
+					uid: string;
+					username?: string;
+					status: PresenceStatus;
+					elapsedMs: number;
+					updatedAt?: { toMillis?: () => number };
+				};
+				const lastSeen = data.updatedAt?.toMillis?.() ?? now;
+				// presence.username denormalize (writePresence'de yazılıyor).
+				// Eski kayıtlar için fallback.
+				const username = data.username?.trim() || `kullanıcı#${data.uid.slice(0, 4)}`;
+				// totalSeconds: users/{uid}.totalSeconds (D-018)
+				const userSnap = await getDoc(doc(db, `users/${data.uid}`));
+				const totalSeconds = userSnap.exists()
+					? (userSnap.data() as { totalSeconds?: number }).totalSeconds ?? 0
+					: 0;
+				raw.push({
+					uid: data.uid,
+					username,
+					totalSeconds,
+					status: data.status,
+					effective: resolveEffective(data.status, lastSeen, now),
+					elapsedMs: data.elapsedMs,
+					lastSeen
+				});
+			}
+			raw.sort((a, b) => {
+				if (b.totalSeconds !== a.totalSeconds) return b.totalSeconds - a.totalSeconds;
+				return a.username.localeCompare(b.username);
+			});
+			cb(raw);
+		},
+		(err) => {
+			console.error('[rooms] subscribeRoomMembers error', err);
+			cb([]);
+		}
+	);
 }

@@ -1,10 +1,10 @@
 /**
- * Rooms Store — D-013 (hero layout), D-014 (last-joined hero)
+ * Rooms Store — D-013 (hero layout), D-014 (last-joined hero), D-048 (memberCount), D-049 (delete)
  *
  * Veri kaynağı: Firestore (D-009/D-020). Firebase config yoksa offline
  * fallback: localStorage'a mock seed yazıp oradan okur (lokal geliştirme).
  *
- * Public API (Sprint-01 ile uyumlu):
+ * Public API:
  *   - rooms.list        : tüm odalar (joinAt desc)
  *   - rooms.sorted      : list'in sıralanmış kopyası
  *   - rooms.hero        : son katıldığın oda (yoksa en yeni)
@@ -12,7 +12,9 @@
  *   - rooms.create(name): yeni oda oluşturur, davet kodu üretir, katılır
  *   - rooms.join(code)  : koda göre oda bulunur ve katılınır
  *   - rooms.makeHero(id): bir odayı "son açılan" yap
+ *   - rooms.delete(id) : odayı sil (sadece sahibi, D-049, server-side check)
  *   - rooms.subscribe() : bağlamak için (rooms/+page.svelte mount'unda çağrılır)
+ *   - rooms.dispose()   : Firestore dinlemesini bırak
  */
 
 import { isFirebaseEnabled } from '$lib/firebase/client';
@@ -21,7 +23,7 @@ import * as fb from '$lib/firebase/rooms';
 export type Room = {
 	id: string;
 	name: string;
-	members: number; // backward-compat: Firestore'da 0 (üye sayısı presence'tan türetilir)
+	members: number;
 	createdAt: number;
 	joinAt?: number;
 	inviteCode: string;
@@ -136,6 +138,13 @@ function createRoomsStore() {
 		}));
 	}
 
+	function removeFromLocalStorage(id: string) {
+		if (typeof localStorage === 'undefined') return;
+		if (loadLastJoinedId() === id) {
+			localStorage.removeItem(LAST_JOINED_KEY);
+		}
+	}
+
 	return {
 		get list() {
 			return list;
@@ -175,11 +184,10 @@ function createRoomsStore() {
 				const created = await fb.createRoom(trimmed);
 				if (!created) return null;
 				saveLastJoinedId(created.id);
-				// subscribeMyRooms snapshot'u getirecek — biz de optimistic ekleyelim
 				const local: Room = {
 					id: created.id,
 					name: created.name,
-					members: 1,
+					members: created.memberCount,
 					createdAt: created.createdAt,
 					joinAt: Date.now(),
 					inviteCode: created.inviteCode
@@ -214,12 +222,11 @@ function createRoomsStore() {
 				const local: Room = {
 					id: joined.id,
 					name: joined.name,
-					members: 1,
+					members: joined.memberCount,
 					createdAt: Date.now(),
 					joinAt: Date.now(),
 					inviteCode: joined.inviteCode
 				};
-				// list zaten subscribe ile gelecek ama yine de optimistic ekle
 				list = [local, ...list.filter((r) => r.id !== local.id)];
 				return local;
 			}
@@ -244,7 +251,6 @@ function createRoomsStore() {
 			saveLastJoinedId(roomId);
 			if (isFirebaseEnabled()) {
 				await fb.touchRoom(roomId);
-				// subscribe snapshot ile gelecek
 				return true;
 			}
 			const idx = list.findIndex((r) => r.id === roomId);
@@ -256,6 +262,23 @@ function createRoomsStore() {
 			list = next;
 			saveLocal(list);
 			return true;
+		},
+		/** Odayı sil — D-049. Server-side owner check (firestore.rules). */
+		async delete(roomId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+			if (!isFirebaseEnabled()) {
+				const next = list.filter((r) => r.id !== roomId);
+				if (next.length === list.length) return { ok: false, reason: 'not-found' };
+				list = next;
+				saveLocal(list);
+				removeFromLocalStorage(roomId);
+				return { ok: true };
+			}
+			const res = await fb.deleteRoom(roomId);
+			if (res.ok) {
+				list = list.filter((r) => r.id !== roomId);
+				removeFromLocalStorage(roomId);
+			}
+			return res;
 		}
 	};
 }

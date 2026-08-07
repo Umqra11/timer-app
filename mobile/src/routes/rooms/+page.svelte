@@ -8,8 +8,8 @@
     butonu için e.stopPropagation kullanıyoruz — dış kart bir <div role="button">.
 -->
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { rooms } from '$lib/stores/rooms.svelte';
-
 	let createOpen = $state(false);
 	let joinOpen = $state(false);
 	let newName = $state('');
@@ -45,8 +45,10 @@
 			alert('Bu davet koduna sahip bir oda bulunamadı.');
 		}
 	}
-	async function handleMakeHero(roomId: string) {
+	async function openRoom(roomId: string) {
+		// makeHero önce son katıldığın yapıyor (touchRoom), sonra detaya git
 		await rooms.makeHero(roomId);
+		void goto(`/rooms/${roomId}`);
 	}
 	async function copyCode(e: MouseEvent, code: string) {
 		e.stopPropagation();
@@ -109,8 +111,8 @@
 		<div
 			role="button"
 			tabindex="0"
-			onclick={() => handleMakeHero(r.id)}
-			onkeydown={(e) => activateOnEnterOrSpace(e, () => handleMakeHero(r.id))}
+			onclick={() => openRoom(r.id)}
+			onkeydown={(e) => activateOnEnterOrSpace(e, () => openRoom(r.id))}
 			class="block w-full rounded-3xl border border-border bg-gradient-to-br from-surface to-surface-2 p-6 text-left transition active:scale-[0.99]"
 		>
 			<div class="flex items-center gap-2 text-xs font-medium text-accent">
@@ -161,8 +163,8 @@
 					<div
 						role="button"
 						tabindex="0"
-						onclick={() => handleMakeHero(r.id)}
-						onkeydown={(e) => activateOnEnterOrSpace(e, () => handleMakeHero(r.id))}
+					onclick={() => openRoom(r.id)}
+					onkeydown={(e) => activateOnEnterOrSpace(e, () => openRoom(r.id))}
 						class="block w-full cursor-pointer rounded-2xl border border-border bg-surface p-4 text-left transition active:bg-surface-2"
 					>
 						<div class="flex items-center justify-between">

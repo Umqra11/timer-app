@@ -1,7 +1,7 @@
 ---
 tags: [timer, resume, session-handoff, obsidian-ready]
 created: 2026-08-04
-updated: 2026-08-07 (S-0022 — Sprint-02 KOD tamamlandı: Vercel temizlendi, Firebase SDK entegre, usernames/rooms/presence/stats yazıldı, tık sesi + istatistikler eklendi, build & check temiz. Deploy ⏳ Patron config gerekiyor)
+updated: 2026-08-07 (S-0025 — Sprint-03 Faz 1-2: oda detay sayfası, D-048 memberCount, D-049 owner delete, D-050 visibilitychange, D-047 leaderboard UI; deploy edildi, canlıda https://timerviber.web.app/rooms/0d0aafd0 (testus/kullanici2 simülasyonu). Faz 2'de presence yazımı smoke testte tam görülmedi, debug Sprint-04'te.)
 
 type: session-resume
 ---
@@ -14,14 +14,33 @@ type: session-resume
 > 📚 **Detay:** [[STATUS]] · [[DECISIONS]] · [[HUB]] · [[00-Home]] · [[IDEAS]]
 
 ---
-
-## 📍 Şu An Neredeyiz
-**Aşama:** Sprint-02 (kod) tamamlandı. Deploy ⏳ Patron config bekliyor.
-**Tarih:** 2026-08-07 (S-0022)
+**Aşama:** Sprint-03 Faz 1 + Faz 2 (kısmen) tamamlandı. Faz 3 (mesaj) ve debug ⏳.
+**Tarih:** 2026-08-07 (S-0025)
 **Patron:** Enes
 
+### ✅ Bu oturumda tamamlanan (S-0025)
+
+**Sprint-03 Faz 1 — Oda temel (D-045, D-046, D-048, D-049)**
+1. **Oda detay sayfası** (`routes/rooms/[id]/+page.svelte`) — geri butonu, davet kodu kopyala, Odayı sil (owner), onay modalı
+2. **D-048: `memberCount` denormalize sayaç** — `createRoom` initial 1, `joinRoomByCode` transaction atomik +1
+3. **D-049: Oda sahibi silebilir** — `deleteRoom()` server-side owner check, MVP'de rules `allow delete: if true` (custom function olmadan uid karşılaştırması yapılamadı, Sprint-04'te Cloud Function)
+4. **`firestore.rules`** — rooms create/update/delete strict kurallar, presence match eklendi (önce unutulmuştu!)
+5. **Canlı doğrulama** — Oda oluştur → "1 kişi" → ikinci kullanıcı katıl → "2 kişi" → detay → odayı sil → Firestore'da 404
+
+**Sprint-03 Faz 2 — Leaderboard (D-047, D-050, D-051)**
+6. **`subscribeRoomMembers`** — N+1 query: her presence için `users/{uid}.totalSeconds` okur, client-side sıralama (totalSeconds desc)
+7. **D-050: `setRoomContext` + `visibilitychange` + `beforeunload` listener** — sayfa gizlendiğinde `idle` yaz, stale kalma
+8. **D-051: `effective` status çözümlemesi** — `running` + 2dk eski → 'stale'; `finished` + 5dk eski → 'finished-late' (D-051)
+9. **Leaderboard UI** — username, durum pill (yeşil/sarı nokta), "X dk önce bitti" (D-051), toplam süre
+10. **Canlı smoke** — MemberCount çalışıyor ✅; leaderboard UI render ✅; presence verisi henüz tam görünmüyor (debug Sprint-04)
+
+**Bilinen sorun — Faz 2 debug (Sprint-04'te)**
+ - `setRoomContext` mount'ta `writePresence('idle', 0)` çağırıyor ama Firestore'da doc 404 dönüyor
+ - Olası sebep: `username.current` race (mount anında null), ya da `presence.writePresence` sessizce hata
+ - 0 hata 0 uyarı, build temiz, deploy edildi
+ - Screenshot: leaderboard "Henüz kimse yok" placeholder'ı görünüyor (doğru UI, veri yok)
+
 ### ✅ Bu oturumda tamamlanan (S-0022)
-1. **Vercel tamamen temizlendi** — `mobile/.vercel/`, `vercel.json`, `VERCEL_OIDC_TOKEN` silindi
 2. **Adapter-static'e geçildi** — `adapter-vercel`/`adapter-auto` çıkar, `adapter-static` (SPA fallback `index.html`) kuruldu
 3. **Vite config** — `adapter()` artık sveltekit plugin içinde SPA modunda
 4. **Firebase SDK + firebase-tools** kuruldu
