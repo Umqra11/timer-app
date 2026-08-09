@@ -58,6 +58,11 @@
 
 	// === Delete / Leave modal ===
 	let actionModalOpen = $state(false); // 'delete' veya 'leave'
+	// I5 fix: in-flight guard — confirm butonuna çift tıklayınca iki paralel
+	// deleteRoom/leaveRoom call soradan bug'a yol açıyordu. Diğer 3 modal
+	// (create/join/reaction) zaten sending flag'i tutuyor; action modal
+	// port sırasında kaybetmişti.
+	let actionSending = $state(false);
 
 	const isOwner = $derived(
 		room !== null && getDeviceUid() === room.ownerUid
@@ -282,23 +287,30 @@
 		actionModalOpen = true;
 	}
 	function closeActionModal() {
+		if (actionSending) return; // ux: in-flight sırasında kapatmayı engelle
 		actionModalOpen = false;
 	}
 	async function handleAction() {
 		if (!myRoom) return;
 		playClick();
-		if (isOwner) {
-			const res = await rooms.delete(myRoom.id);
-			actionModalOpen = false;
-			if (!res.ok) {
-				if (res.reason === 'forbidden') alert('Bu odayı sadece sahibi silebilir.');
-				else if (res.reason === 'not-found') alert('Oda zaten silinmiş.');
+		actionSending = true;
+		try {
+			if (isOwner) {
+				const res = await rooms.delete(myRoom.id);
+				actionModalOpen = false;
+				if (!res.ok) {
+					if (res.reason === 'forbidden') alert('Bu odayı sadece sahibi silebilir.');
+					else if (res.reason === 'not-found') alert('Oda zaten silinmiş.');
+					else alert('Oda silinemedi. Tekrar dene.');
+				}
+				// başarı: subscribeMyRooms otomatik günceller
+			} else {
+				const res = await fb.leaveRoom(myRoom.id);
+				actionModalOpen = false;
+				if (!res.ok) alert('Ayrılınamadı. Tekrar dene.');
 			}
-			// başarı: subscribeMyRooms otomatik günceller
-		} else {
-			const res = await fb.leaveRoom(myRoom.id);
-			actionModalOpen = false;
-			if (!res.ok) alert('Ayrılınamadı. Tekrar dene.');
+		} finally {
+			actionSending = false;
 		}
 	}
 </script>
@@ -746,18 +758,24 @@
 				<button
 					type="button"
 					onclick={closeActionModal}
-					class="flex-1 rounded-full border border-border bg-bg px-4 py-3 text-sm font-medium text-fg-muted active:bg-surface-2"
+					disabled={actionSending}
+					class="flex-1 rounded-full border border-border bg-bg px-4 py-3 text-sm font-medium text-fg-muted active:bg-surface-2 disabled:opacity-40"
 				>
 					Vazgeç
 				</button>
 				<button
 					type="button"
 					onclick={handleAction}
+					disabled={actionSending}
 					class={isOwner
-						? 'flex-1 rounded-full bg-red-600 px-4 py-3 text-sm font-semibold text-white active:bg-red-700'
-						: 'flex-1 rounded-full bg-accent px-4 py-3 text-sm font-semibold text-bg active:bg-accent-hover'}
+						? 'flex-1 rounded-full bg-red-600 px-4 py-3 text-sm font-semibold text-white active:bg-red-700 disabled:opacity-40'
+						: 'flex-1 rounded-full bg-accent px-4 py-3 text-sm font-semibold text-bg active:bg-accent-hover disabled:opacity-40'}
 				>
-					{isOwner ? 'Evet, sil' : 'Evet, ayrıl'}
+					{#if actionSending}
+						{isOwner ? 'Siliniyor…' : 'Ayrılıyor…'}
+					{:else}
+						{isOwner ? 'Evet, sil' : 'Evet, ayrıl'}
+					{/if}
 				</button>
 			</div>
 		</div>
