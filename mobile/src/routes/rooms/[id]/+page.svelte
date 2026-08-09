@@ -178,6 +178,10 @@
 	}
 
 	// D-054 — bir kişiye ait tepkileri al
+	// NOT: MVP'de tüm oda tepkileri tek subscribe ile indirilir, sonra
+	// client-side filtreleme yapılır. Scale-up'ta (10+ kişi, 100+ tepki)
+	// `where('targetUid', 'in', memberUids)` ile server-side filtre tercih
+		// edilmeli — Firestore `in` 30 değere kadar destekler. Şu an premature.
 	function reactionsFor(uid: string): reactions.ReactionDoc[] {
 		return allReactions.filter((r) => r.targetUid === uid);
 	}

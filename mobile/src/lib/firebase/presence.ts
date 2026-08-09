@@ -45,7 +45,7 @@ export async function writePresence(
 	elapsedMs: number
 ): Promise<void> {
 	const db = getDb();
-	if (!db) { console.log('[presence] no db'); return; }
+	if (!db) return;
 	const uid = getDeviceUid();
 	try {
 		await setDoc(doc(db, presenceRef(roomId, uid)), {

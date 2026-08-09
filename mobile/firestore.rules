@@ -34,9 +34,22 @@ service cloud.firestore {
 			}
 
 			// users/{uid}/rateLimit/{doc}: dakikalık/saatlik sayaç (D-053)
-			// Sprint-04 v2 fix: subcollection rule eksikti — sendReaction permission-denied alıyordu
+			// Sprint-04 v2: subcollection rule eklendi (sendReaction 404 fix)
+			// Sprint-04 v11: structure validation — 4 alan + tipler, negatif sayaç reddedilir.
+			// NOT: Cross-user yazım koruması (kötü niyetli client başka uid'in
+			// sayacını sıfırlamasın) auth olmadığı için rules ile MÜMKÜN DEĞİL
+			// (D-015 — username + localStorage uid, Firebase Auth YOK). Bu
+			// koruma için Cloud Function (server-side) gerekli — Sprint-04 #6.
 			match /rateLimit/{doc} {
-				allow read, write: if true;  // MVP client-side check, Sprint-04'te Cloud Function
+				allow read: if true;
+				allow create, update: if request.resource.data.keys().hasAll(['minuteCount', 'minuteResetAt', 'hourCount', 'hourResetAt'])
+					&& request.resource.data.minuteCount is int
+					&& request.resource.data.minuteResetAt is int
+					&& request.resource.data.hourCount is int
+					&& request.resource.data.hourResetAt is int
+					&& request.resource.data.minuteCount >= 0
+					&& request.resource.data.hourCount >= 0;
+				allow delete: if false;
 			}
 		}
 

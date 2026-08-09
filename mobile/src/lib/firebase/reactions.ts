@@ -105,11 +105,15 @@ async function writeRateLimit(uid: string, state: RateLimitState): Promise<void>
  * Tepki gönder — D-052, D-053.
  *
  * İki adımlı: önce rate limit check (okuma), sonra tepki yaz (yazma). Yeni
- * kullanıcılar (rateLimit doc yok) sınırsız başlar. Race condition kabul
- * edilebilir (D-053 client-side, Sprint-04 Cloud Function ile sıkılaştırılacak).
+ * kullanıcılar (rateLimit doc yok) sınırsız başlar.
  *
- * `runTransaction` async getDoc ile uyumsuz (tx.get sadece aynı transaction'daki
- * doc'ları okuyabilir, rate limit doc farklı collection'da).
+ * BİLİNEN RACE: Aynı uid'den iki eşzamanlı istek aynı sayacı okuyup +1
+ * yazabilir. Cross-device için gerçek çözüm server-side atomic — Cloud
+ * Function `runTransaction` ile (server-side tx.get async değil, sorunsuz).
+ * Sprint-04 #6 olarak planlandı; MVP için tolere edilebilir.
+ *
+ * NOT: Client-side `runTransaction` async `getDoc` ile uyumsuz (tx.get sadece
+ * aynı transaction doc'larını okur, rate limit doc farklı collection'da).
  */
 export async function sendReaction(
 	roomId: string,
@@ -127,6 +131,11 @@ export async function sendReaction(
 
 	const uid = getDeviceUid();
 	const reactionId = crypto.randomUUID();
+	// expireAt — client-side hesaplanmış "now + 4 saat".
+	// NOT: Firestore TTL server clock kullanır, client clock ile ~1 sn sapma
+	// olabilir (NTP sync). 4 saatlik pencere için tolere edilebilir; doc'lar
+	// yaklaşık doğru zamanda silinir. Gerçek server-time expireAt için
+	// Cloud Function onWrite trigger gerekli — Sprint-04 #6.
 	const expireAt = Date.now() + REACTION_TTL_MS;
 
 	try {
