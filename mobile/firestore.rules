@@ -27,10 +27,11 @@ service cloud.firestore {
 			allow delete: if false;
 
 			// users/{uid}/joinedRooms/{roomId}: hangi odalara katıldı
+			// D-062: kullanıcı kendi joinedRooms/{roomId} doc'unu silebilir ("Odadan ayrıl")
 			match /joinedRooms/{roomId} {
 				allow read: if true;
-				allow create, update: if true;  // server-side check yok, MVP
-				allow delete: if false;
+				allow create, update: if true;  // server-side check yok, MVP (D-059 race window kabul)
+				allow delete: if true;  // D-062: kullanıcı kendi doc'unu silebilir; cross-user riski yok
 			}
 
 			// users/{uid}/rateLimit/{doc}: dakikalık/saatlik sayaç (D-053)
