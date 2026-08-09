@@ -1,7 +1,7 @@
 ---
 tags: [timer, decisions, technical-decisions, product-decisions, obsidian-ready]
 created: 2026-08-04
-updated: 2026-08-09 (Sprint-05 Faz 1: /leaderboard single-room refactor tamamlandı. Yeni kararlar: D-059/060/061/062. Toplam 59 karar.)
+updated: 2026-08-09 (Sprint-05 Faz 1: /leaderboard single-room refactor tamamlandı. Yeni kararlar: D-059/060/061/062. Toplam 62 karar.)
 type: decisions-log
 ---
 
