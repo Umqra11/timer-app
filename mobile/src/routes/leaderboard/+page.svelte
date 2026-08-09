@@ -197,17 +197,15 @@
 		creating = true;
 		const res = await rooms.create(name);
 		creating = false;
-		if (res === null) {
-			createError = 'Oda kurulamadı. Tekrar dene.';
-		} else if ('reason' in res) {
-			if (res.reason === 'already-in-room') {
-				createError = `Zaten "${myRooms[0]?.name ?? 'bir odada'}" üyesin. Önce ayrılmalısın.`;
-			} else {
-				createError = 'Oda kurulamadı: ' + res.reason;
-			}
-		} else {
-			// success — `res` is the Room; subscribeMyRooms otomatik günceller
+		if (res.ok) {
+			// success — subscribeMyRooms otomatik günceller
 			createOpen = false;
+		} else if (res.reason === 'already-in-room') {
+			createError = `Zaten "${myRooms[0]?.name ?? 'bir odada'}" üyesin. Önce ayrılmalısın.`;
+		} else if (res.reason === 'invalid') {
+			createError = 'Oda adı 1-40 karakter olmalı';
+		} else {
+			createError = 'Oda kurulamadı. Tekrar dene.';
 		}
 	}
 
@@ -230,19 +228,17 @@
 		joining = true;
 		const res = await rooms.joinByCode(code);
 		joining = false;
-		if (res === null) {
-			joinError = 'Katılınamadı. Tekrar dene.';
-		} else if ('reason' in res) {
-			if (res.reason === 'already-in-room') {
-				joinError = `Zaten "${myRooms[0]?.name ?? 'bir odada'}" üyesin. Önce ayrılmalısın.`;
-			} else if (res.reason === 'not-found' || res.reason === 'invalid') {
-				joinError = 'Bu kodla bir oda bulunamadı';
-			} else {
-				joinError = 'Katılınamadı: ' + res.reason;
-			}
-		} else {
+		if (res.ok) {
 			// success
 			joinOpen = false;
+		} else if (res.reason === 'already-in-room') {
+			joinError = `Zaten "${myRooms[0]?.name ?? 'bir odada'}" üyesin. Önce ayrılmalısın.`;
+		} else if (res.reason === 'not-found') {
+			joinError = 'Bu kodla bir oda bulunamadı';
+		} else if (res.reason === 'invalid') {
+			joinError = 'Davet kodu 6 karakter olmalı';
+		} else {
+			joinError = 'Katılınamadı. Tekrar dene.';
 		}
 	}
 

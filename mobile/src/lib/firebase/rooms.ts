@@ -63,12 +63,21 @@ export type RoomMeta = {
 	joinedAt?: number;
 };
 
+/** I1 + I2: discriminated union return types — TS narrowing sesli. */
+export type CreateRoomResult =
+	| { ok: true; room: RoomMeta }
+	| { ok: false; reason: 'already-in-room' | 'invalid' | 'unavailable' | 'error' };
+
+export type JoinRoomResult =
+	| { ok: true; room: RoomMeta }
+	| { ok: false; reason: 'already-in-room' | 'invalid' | 'not-found' | 'unavailable' | 'error' };
+
 /** Oda oluştur, otomatik üye ol, last-opened'ı şimdiye çek. */
-export async function createRoom(name: string): Promise<RoomMeta | null> {
+export async function createRoom(name: string): Promise<CreateRoomResult> {
 	const trimmed = name.trim();
-	if (trimmed.length < 1 || trimmed.length > 40) return null;
+	if (trimmed.length < 1 || trimmed.length > 40) return { ok: false, reason: 'invalid' };
 	const db = getDb();
-	if (!db) return null;
+	if (!db) return { ok: false, reason: 'unavailable' };
 	const uid = getDeviceUid();
 	const id = crypto.randomUUID();
 	const inviteCode = generateInviteCode();
@@ -90,40 +99,50 @@ export async function createRoom(name: string): Promise<RoomMeta | null> {
 		});
 	} catch (err) {
 		console.error('[rooms] createRoom failed', err);
-		return null;
+		return { ok: false, reason: 'error' };
 	}
 
 	return {
-		id,
-		name: trimmed,
-		ownerUid: uid,
-		inviteCode,
-		createdAt,
-		memberCount: 1
+		ok: true,
+		room: {
+			id,
+			name: trimmed,
+			ownerUid: uid,
+			inviteCode,
+			createdAt,
+			memberCount: 1
+		}
 	};
 }
 
 /** Davet koduna göre oda bul, katıl. */
-export async function joinRoomByCode(inviteCode: string): Promise<RoomMeta | null> {
+export async function joinRoomByCode(inviteCode: string): Promise<JoinRoomResult> {
 	const code = inviteCode.trim().toUpperCase();
-	if (code.length !== INVITE_LEN) return null;
+	if (code.length !== INVITE_LEN) return { ok: false, reason: 'invalid' };
 	const db = getDb();
-	if (!db) return null;
+	if (!db) return { ok: false, reason: 'unavailable' };
 	const uid = getDeviceUid();
 
+	let q;
+	let snap;
 	try {
-		const q = query(collection(db, ROOMS), where('inviteCode', '==', code));
-		const snap = await getDocs(q);
-		if (snap.empty) return null;
-		const roomDoc = snap.docs[0];
-		const data = roomDoc.data() as {
-			name: string;
-			ownerUid: string;
-			inviteCode: string;
-			memberCount?: number;
-		};
-		const roomId = roomDoc.id;
+		q = query(collection(db, ROOMS), where('inviteCode', '==', code));
+		snap = await getDocs(q);
+	} catch (err) {
+		console.error('[rooms] joinRoomByCode query failed', err);
+		return { ok: false, reason: 'error' };
+	}
+	if (snap.empty) return { ok: false, reason: 'not-found' };
+	const roomDoc = snap.docs[0];
+	const data = roomDoc.data() as {
+		name: string;
+		ownerUid: string;
+		inviteCode: string;
+		memberCount?: number;
+	};
+	const roomId = roomDoc.id;
 
+	try {
 		await runTransaction(db, async (tx) => {
 			const ref = doc(db, `${ROOMS}/${roomId}`);
 			const fresh = await tx.get(ref);
@@ -134,19 +153,22 @@ export async function joinRoomByCode(inviteCode: string): Promise<RoomMeta | nul
 			});
 			tx.update(ref, { memberCount: (fresh.data()['memberCount'] ?? 0) + 1 });
 		});
+	} catch (err) {
+		console.error('[rooms] joinRoomByCode tx failed', err);
+		return { ok: false, reason: 'error' };
+	}
 
-		return {
+	return {
+		ok: true,
+		room: {
 			id: roomId,
 			name: data.name,
 			ownerUid: data.ownerUid,
 			inviteCode: data.inviteCode,
 			createdAt: Date.now(),
 			memberCount: (data.memberCount ?? 0) + 1
-		};
-	} catch (err) {
-		console.error('[rooms] joinRoomByCode failed', err);
-		return null;
-	}
+		}
+	};
 }
 
 export function subscribeMyRooms(

@@ -29,6 +29,15 @@ export type Room = {
 	inviteCode: string;
 };
 
+/** I1: store'un discriminated union result tipleri. */
+export type CreateRoomResult =
+	| { ok: true; room: Room }
+	| { ok: false; reason: 'already-in-room' | 'invalid' | 'unavailable' | 'error' };
+
+export type JoinRoomResult =
+	| { ok: true; room: Room }
+	| { ok: false; reason: 'already-in-room' | 'invalid' | 'not-found' | 'unavailable' | 'error' };
+
 const STORAGE_KEY = 'timer_rooms';
 const LAST_JOINED_KEY = 'timer_last_joined';
 
@@ -198,11 +207,11 @@ function createRoomsStore() {
 			});
 		},
 		/** Yeni oda oluştur. Kullanıcı otomatik katılır, hero olur. */
-		async create(
-			name: string
-		): Promise<Room | null | { ok: false; reason: 'already-in-room' }> {
+		async create(name: string): Promise<CreateRoomResult> {
 			const trimmed = name.trim();
-			if (trimmed.length === 0 || trimmed.length > 40) return null;
+			if (trimmed.length === 0 || trimmed.length > 40) {
+				return { ok: false, reason: 'invalid' };
+			}
 
 			// D-059: kullanıcı zaten bir odada — yeni oda oluşturmayı engelle
 			if (myRoomsCache.length >= 1) {
@@ -210,8 +219,9 @@ function createRoomsStore() {
 			}
 
 			if (isFirebaseEnabled()) {
-				const created = await fb.createRoom(trimmed);
-				if (!created) return null;
+				const res = await fb.createRoom(trimmed);
+				if (!res.ok) return res;
+				const created = res.room;
 				saveLastJoinedId(created.id);
 				const local: Room = {
 					id: created.id,
@@ -222,7 +232,7 @@ function createRoomsStore() {
 					inviteCode: created.inviteCode
 				};
 				list = [local, ...list.filter((r) => r.id !== local.id)];
-				return local;
+				return { ok: true, room: local };
 			}
 
 			const now = Date.now();
@@ -237,14 +247,12 @@ function createRoomsStore() {
 			list = [room, ...list];
 			saveLocal(list);
 			saveLastJoinedId(room.id);
-			return room;
+			return { ok: true, room };
 		},
 		/** Davet koduna göre odaya katıl. */
-		async joinByCode(
-			code: string
-		): Promise<Room | null | { ok: false; reason: 'already-in-room' }> {
+		async joinByCode(code: string): Promise<JoinRoomResult> {
 			const target = code.trim().toUpperCase();
-			if (!target) return null;
+			if (!target) return { ok: false, reason: 'invalid' };
 
 			// D-059: kullanıcı zaten bir odada — ikinci odaya katılmayı engelle
 			if (myRoomsCache.length >= 1) {
@@ -252,8 +260,9 @@ function createRoomsStore() {
 			}
 
 			if (isFirebaseEnabled()) {
-				const joined = await fb.joinRoomByCode(target);
-				if (!joined) return null;
+				const res = await fb.joinRoomByCode(target);
+				if (!res.ok) return res;
+				const joined = res.room;
 				saveLastJoinedId(joined.id);
 				const local: Room = {
 					id: joined.id,
@@ -264,11 +273,11 @@ function createRoomsStore() {
 					inviteCode: joined.inviteCode
 				};
 				list = [local, ...list.filter((r) => r.id !== local.id)];
-				return local;
+				return { ok: true, room: local };
 			}
 
 			const idx = list.findIndex((r) => r.inviteCode === target);
-			if (idx === -1) return null;
+			if (idx === -1) return { ok: false, reason: 'not-found' };
 			const now = Date.now();
 			const updated: Room = {
 				...list[idx],
@@ -280,7 +289,7 @@ function createRoomsStore() {
 			list = next;
 			saveLocal(list);
 			saveLastJoinedId(updated.id);
-			return updated;
+			return { ok: true, room: updated };
 		},
 		/** Bir odayı "son açılan" yap — D-014 hero. */
 		async makeHero(roomId: string): Promise<boolean> {
