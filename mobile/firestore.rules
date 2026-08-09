@@ -31,7 +31,7 @@ service cloud.firestore {
 			match /joinedRooms/{roomId} {
 				allow read: if true;
 				allow create, update: if true;  // server-side check yok, MVP (D-059 race window kabul)
-				allow delete: if true;  // D-062: kullanıcı kendi doc'unu silebilir; cross-user riski yok
+				allow delete: if true;  // D-062: silme açık; cross-user koruma auth olmadan mümkün değil (D-015)
 			}
 
 			// users/{uid}/rateLimit/{doc}: dakikalık/saatlik sayaç (D-053)
