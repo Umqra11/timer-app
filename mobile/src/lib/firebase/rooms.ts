@@ -74,19 +74,24 @@ export async function createRoom(name: string): Promise<RoomMeta | null> {
 	const inviteCode = generateInviteCode();
 	const createdAt = Date.now();
 
-	await runTransaction(db, async (tx) => {
-		tx.set(doc(db, `${ROOMS}/${id}`), {
-			name: trimmed,
-			ownerUid: uid,
-			inviteCode,
-			memberCount: 1,
-			createdAt: serverTimestamp()
+	try {
+		await runTransaction(db, async (tx) => {
+			tx.set(doc(db, `${ROOMS}/${id}`), {
+				name: trimmed,
+				ownerUid: uid,
+				inviteCode,
+				memberCount: 1,
+				createdAt: serverTimestamp()
+			});
+			tx.set(doc(db, `users/${uid}/${JOINED}/${id}`), {
+				joinedAt: serverTimestamp(),
+				lastOpenedAt: serverTimestamp()
+			});
 		});
-		tx.set(doc(db, `users/${uid}/${JOINED}/${id}`), {
-			joinedAt: serverTimestamp(),
-			lastOpenedAt: serverTimestamp()
-		});
-	});
+	} catch (err) {
+		console.error('[rooms] createRoom failed', err);
+		return null;
+	}
 
 	return {
 		id,
@@ -106,32 +111,42 @@ export async function joinRoomByCode(inviteCode: string): Promise<RoomMeta | nul
 	if (!db) return null;
 	const uid = getDeviceUid();
 
-	const q = query(collection(db, ROOMS), where('inviteCode', '==', code));
-	const snap = await getDocs(q);
-	if (snap.empty) return null;
-	const roomDoc = snap.docs[0];
-	const data = roomDoc.data() as { name: string; ownerUid: string; inviteCode: string; memberCount?: number };
-	const roomId = roomDoc.id;
+	try {
+		const q = query(collection(db, ROOMS), where('inviteCode', '==', code));
+		const snap = await getDocs(q);
+		if (snap.empty) return null;
+		const roomDoc = snap.docs[0];
+		const data = roomDoc.data() as {
+			name: string;
+			ownerUid: string;
+			inviteCode: string;
+			memberCount?: number;
+		};
+		const roomId = roomDoc.id;
 
-	await runTransaction(db, async (tx) => {
-		const ref = doc(db, `${ROOMS}/${roomId}`);
-		const fresh = await tx.get(ref);
-		if (!fresh.exists()) throw new Error('room-vanished');
-		tx.set(doc(db, `users/${uid}/${JOINED}/${roomId}`), {
-			joinedAt: serverTimestamp(),
-			lastOpenedAt: serverTimestamp()
+		await runTransaction(db, async (tx) => {
+			const ref = doc(db, `${ROOMS}/${roomId}`);
+			const fresh = await tx.get(ref);
+			if (!fresh.exists()) throw new Error('room-vanished');
+			tx.set(doc(db, `users/${uid}/${JOINED}/${roomId}`), {
+				joinedAt: serverTimestamp(),
+				lastOpenedAt: serverTimestamp()
+			});
+			tx.update(ref, { memberCount: (fresh.data()['memberCount'] ?? 0) + 1 });
 		});
-		tx.update(ref, { memberCount: (fresh.data()['memberCount'] ?? 0) + 1 });
-	});
 
-	return {
-		id: roomId,
-		name: data.name,
-		ownerUid: data.ownerUid,
-		inviteCode: data.inviteCode,
-		createdAt: Date.now(),
-		memberCount: (data.memberCount ?? 0) + 1
-	};
+		return {
+			id: roomId,
+			name: data.name,
+			ownerUid: data.ownerUid,
+			inviteCode: data.inviteCode,
+			createdAt: Date.now(),
+			memberCount: (data.memberCount ?? 0) + 1
+		};
+	} catch (err) {
+		console.error('[rooms] joinRoomByCode failed', err);
+		return null;
+	}
 }
 
 export function subscribeMyRooms(
@@ -296,8 +311,13 @@ export async function leaveRoom(roomId: string): Promise<{ ok: true } | { ok: fa
 	const db = getDb();
 	if (!db) return { ok: false, reason: 'unavailable' };
 	const uid = getDeviceUid();
-	await deleteDoc(doc(db, `users/${uid}/joinedRooms/${roomId}`));
-	return { ok: true };
+	try {
+		await deleteDoc(doc(db, `users/${uid}/joinedRooms/${roomId}`));
+		return { ok: true };
+	} catch (err) {
+		console.error('[rooms] leaveRoom failed', err);
+		return { ok: false, reason: 'error' };
+	}
 }
 
 /* ---------------------------------------------------------------------------
