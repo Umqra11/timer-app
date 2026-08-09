@@ -1,7 +1,7 @@
 ---
 tags: [timer, decisions, technical-decisions, product-decisions, obsidian-ready]
 created: 2026-08-04
-updated: 2026-08-07 (S-0028 — Sprint-03 Faz 1+2+3 tamamlandı, canlıda timerviber.web.app. Yeni karar yok; D-045..D-055 oda sistemi + D-052..D-055 mesaj tepkileri zaten yazılmıştı. Toplam 55 karar.)
+updated: 2026-08-09 (S-0030 — Sprint-04 Debugging Pass tamamlandı (v10 + v11). Yeni karar yok; 6 bulgu #1-#6 düzeltildi/dokümante edildi, sprint plan kalan: TTL + Cloud Functions. Toplam 55 karar.)
 type: decisions-log
 ---
 

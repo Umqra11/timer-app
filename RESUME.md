@@ -1,7 +1,7 @@
 ---
 tags: [timer, resume, session-handoff, obsidian-ready]
 created: 2026-08-04
-updated: 2026-08-07 (S-0029 — Sprint-04 Aşama 1-4 (debug + asıl fix) tamamlandı. SDK `sendReaction` permission-denied kök nedeni: `/users/{uid}/rateLimit` subcollection rule eksikti + `username.current` `targetUid` olarak yazılıyordu. İkisi de fix'lendi, canlıda cross-user round-trip çalışıyor. TTL policy ⏳ Console'dan manuel enable.)
+updated: 2026-08-09 (S-0030 — Sprint-04 Debugging Pass tamamlandı: v10 setRoomContext duplicate fix (commit b69bd93, pushed) + v11 (rule structure validation, console.log cleanup, expireAt/perf/race doc comments). Sprint-04 kalan: TTL policy enable (patron) + Cloud Functions (server-side rate limit, owner check, recursive delete).)
 type: session-resume
 ---
 
@@ -16,10 +16,10 @@ type: session-resume
 
 ## 📍 Şu An Neredeyiz
 
-**Aşama:** Sprint-04 Aşama 1-4 (debug + asıl fix) tamamlandı, **Aşama 5 (TTL policy) ⏳ Console'dan manuel**
-**Tarih:** 2026-08-07 (S-0029)
+**Aşama:** Sprint-04 Debugging Pass tamamlandı (v10 + v11), **TTL policy + Cloud Functions � Patron işlemi**
+**Tarih:** 2026-08-09 (S-0030)
 **Patron:** Enes
-**Canlı:** https://timerviber.web.app (otomatik deploy, `Umqra11/timer-app` GitHub repo, 8 commit)
+**Canlı:** https://timerviber.web.app (otomatik deploy, `Umqra11/timer-app` GitHub repo, 10 commit — v10 b69bd93 dahil)
 
 ### ✅ Sprint-03 — Tamamlanan (S-0024..S-0028)
 
@@ -65,11 +65,50 @@ type: session-resume
 ### ⏳ Sprint-04 devam — Manuel patron işlemi
 
 1. **Firestore TTL policy** — Console → Firestore → Indexes & TTL → `expireAt` field, 14400 saniye (4 saat)
-2. **Server-side rate limit** — Cloud Function
+2. **Server-side rate limit** — Cloud Function (atomic `runTransaction`)
 3. **Server-side owner check (D-049 sıkılaştırma)** — Custom function
 4. **Oda silme recursive delete** — Cloud Function
 5. **Stats rolling week sum (D-018)**
 6. **Username reclamation policy (D-015)**
+7. **Console error monitoring**
+
+---
+
+## ✅ Sprint-04 — Debugging Pass (S-0030, 2026-08-09)
+
+Mavis (bu oturum) Sprint-03 commit history + canlı kodu sistematik olarak taradı,
+6 potansiyel sorun/iyileştirme tespit etti ve kök neden analiziyle tek tek ele aldı.
+
+### v10: setRoomContext duplicate fix (commit `b69bd93` — pushed)
+
+**Kök neden:** `+page.svelte`'te hem `onMount` hem `$effect` içinde aynı
+`timer.setRoomContext(...)` çağrısı vardı. Commit `61daa83`'te `$effect`
+"post-mount username hydration" için eklenmiş ama `onMount` versiyonu unutulmuş.
+
+**Etki:** Her oda sayfası mount'unda 2× `writePresence` (gereksiz Firestore yazımı)
++ listener add/remove döngüsü. `$effect` zaten reactive tracking yapıyor
+(mount'ta 1× + dependency değişiminde tekrar) → `onMount` versiyonu tamamen gereksiz.
+
+**Fix:** `onMount` içindeki 4 satır silindi. v6 fix'inin (commit `4ad33ef`)
+yanında kalan bir verimsizlikti.
+
+### v11: Debugging pass — 5 iyileştirme/dokümantasyon
+
+1. **`presence.ts:48`** — `console.log('[presence] no db')` kaldırıldı (sessiz return).
+   Production'da debug log, offline modda spam. `client.ts:44` zaten uyarı veriyor.
+2. **`firestore.rules:38-55`** — `/users/{uid}/rateLimit/{doc}` structure validation
+   eklendi (4 alan + tipler + ≥0). Malformed/negatif yazımlar reddedilir.
+   Cross-user yazım koruması mümkün değil (auth yok — D-015), Cloud Function ile.
+3. **`reactions.ts:128-133`** — `expireAt` client/server clock trade-off dokümante.
+   4 saatlik pencere için ±1 sn NTP skew tolere edilebilir; gerçek server-time
+   için Cloud Function onWrite gerekli.
+4. **`+page.svelte:184-189`** — `reactionsFor` perf trade-off dokümante.
+   MVP'de OK; scale-up'ta `where('targetUid', 'in', memberUids)` kullanılabilir.
+5. **`reactions.ts:104-118`** — Rate limit race condition comment netleştirildi.
+   Aynı uid'den iki eşzamanlı istek aynı sayacı +1 yapabilir. Atomic tx için
+   server-side `runTransaction` (async `getDoc` sorunu server'da yok) — Sprint-04 #6.
+
+**Verification:** Her adımda `npm run check` (0 hata 0 uyarı), `npm run build` (temiz).
 
 ---
 
@@ -83,9 +122,12 @@ type: session-resume
 ## 📊 Commit'ler (Sprint-03 + Sprint-04)
 
 ```
+(Sprint-04 Debugging Pass — S-0030)
+b69bd93 fix(rooms): remove duplicate setRoomContext call in onMount (v10)  ← pushed
+(Sprint-04 v11: rule + console + docs — yerel, push bekliyor)
 (Sprint-04 Aşama 1-4)
-fix(sprint-04): rateLimit subcollection rule + getDeviceUid for self-reaction target
-(Sprint-03 Faz 3)
+023d575 fix(sprint-04): SDK reactions permission-denied — rateLimit rule + getDeviceUid
+866f882 docs(vault): Sprint-03 Faz 1+2+3 tamamlandı + Sprint-04 plan
 14d49ce fix(reactions): sequential rate limit (runTransaction uyumsuz)
 2c26c90 feat(sprint-03): reactions sistemi (D-052/053/054)
 4ad33ef fix(sprint-03): make setRoomContext.onRemote truly optional  ← KRİTİK FIX (presence)
@@ -116,13 +158,14 @@ e62938a feat(sprint-02): Firebase integration, Firestore stores, stats, click so
 
 - [x] Aşama 1: Debug (SDK `sendReaction` permission-denied) — kök neden bulundu (rateLimit rule + yanlış targetUid), fix deploy edildi
 - [x] Aşama 4: Verification — canlı smoke cross-user round-trip çalışıyor
+- [x] **Debugging Pass (S-0030)** — 6 bulgu #1-#6 ele alındı, v10 + v11 tamamlandı
 
-### ⏳ Kalan
+### ⏳ Kalan (Manuel patron işlemi + Sprint-05 adayı)
 
-- [ ] **TTL policy enable (patron işlemi)** — Firebase Console → Firestore → Indexes & TTL → `expireAt` field, 14400 saniye. Aşama 1'in ikinci maddesi.
-- [ ] Cloud Function: `users/{uid}/rateLimit/reactions` server-side check
+- [ ] **TTL policy enable (patron işlemi)** — Firebase Console → Firestore → Indexes & TTL → `expireAt` field, 14400 saniye
+- [ ] Cloud Function: `users/{uid}/rateLimit/reactions` server-side atomic check (`runTransaction` — server-side async `getDoc` OK)
 - [ ] Cloud Function: oda silme recursive (presence + reactions + joinedRooms)
-- [ ] Cloud Function: oda sahibi custom check (uid karşılaştırması)
+- [ ] Cloud Function: oda sahibi custom check (uid karşılaştırması — D-049 sıkılaştırma)
 - [ ] Stats rolling week sum (D-018)
 - [ ] Username reclamation policy (D-015)
 - [ ] Console error monitoring

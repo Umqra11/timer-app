@@ -1,7 +1,7 @@
 ---
 tags: [timer, status, project-status, obsidian-ready]
 created: 2026-08-04
-updated: 2026-08-07 (S-0028 — Sprint-03 Faz 1+2+3 tamamlandı, canlıda https://timerviber.web.app. Faz 4 debug + polish ⏳.)
+updated: 2026-08-09 (S-0030 — Sprint-04 Debugging Pass tamamlandı: v10 setRoomContext duplicate fix (commit b69bd93, pushed), v11 rule structure validation + console.log cleanup + expireAt/perf/race doc comments. TTL policy ⏳ hâlâ patron işlemi, Cloud Function Sprint-04 kalan işi.)
 type: status
 ---
 
@@ -36,7 +36,8 @@ type: status
 | **Sprint-03 Faz 1: Oda temel** | ✅ **TAMAM** — oda detay sayfası, D-048 memberCount, D-049 owner delete |
 | **Sprint-03 Faz 2: Leaderboard** | 🟢 **ÇALIŞIYOR** — v6 setRoomContext fix sonrası presence yazımı tamam (kullanıcı leaderboard'da görünüyor) |
 | **Sprint-03 Faz 3: Mesaj sistemi** | 🟡 **UI tamam, SDK debug gerek** — REST 200, SDK 404 (Sprint-04) |
-| **Sprint-04: Debug + Polish** | ⏳ **Planlandı** — SDK reactions write, TTL policy, server-side rate limit/owner, recursive delete |
+| **Sprint-04: Debug + Polish** | 🟢 **Debugging Pass tamamlandı** — v10 (b69bd93) + v11 (rule + cleanup + docs). TTL policy ⏳, Cloud Functions ⏳ |
+| **Sprint-04 Debugging Pass** | ✅ **TAMAM (S-0030)** — 6 bulgu #1-#6 ele alındı, v10 push'lendi, v11 yerel |
 
 ---
 
@@ -84,14 +85,15 @@ type: status
 
 ---
 
-## 🚧 Açık Sorular (Sprint-04 devam)
+## 🚧 Açık Sorular (Sprint-04 devam — Sprint-05 adayı)
 
-- **Firestore TTL policy** — `expireAt` field için Console'dan `gcloud firestore fields ttls update expireAt --collection-group=reactions --enable-ttl --seconds=14400`. (gcloud yok, Console'dan yapılacak.)
-- **Server-side rate limit** — Cloud Function ile `users/{uid}/rateLimit/reactions` server-side check
-- **Server-side owner check (D-049 sıkılaştırma)** — Custom function ile uid karşılaştırması
+- **Firestore TTL policy** — `expireAt` field için Console'dan `gcloud firestore fields ttls update expireAt --collection-group=reactions --enable-ttl --seconds=14400`. (gcloud yok, Console'dan yapılacak — patron işlemi.)
+- **Server-side rate limit** — Cloud Function ile `users/{uid}/rateLimit/reactions` server-side atomic `runTransaction` (server-side async `getDoc` OK). Client-side race condition v11'de dokümante edildi.
+- **Server-side owner check (D-049 sıkılaştırma)** — Custom function ile uid karşılaştırması (auth-free ama custom function trusted)
 - **Oda silme recursive delete** — Cloud Function ile presence + reactions + joinedRooms temizliği
 - **Stats rolling week sum (D-018)** — şu an sadece "bugün" gösteriliyor
 - **Username reclamation policy (D-015)** — eski username'ler orphan kalıyor, 30 gün grace period
+- **Console error monitoring** — production error tracking (Sentry veya Firebase Crashlytics)
 
 ---
 
@@ -110,9 +112,10 @@ type: status
 | Kod (Sprint-03 Faz 2) | 9/9 | 0 |
 | Kod (Sprint-03 Faz 3) | 8/8 | 0 |
 | Kod (Sprint-04 Debug) | 2/2 | 0 |
-| **Toplam** | **73/74** | **1/74** |
+| Kod (Sprint-04 Debugging Pass — v11) | 4/4 | 0 |
+| **Toplam** | **77/78** | **1/78** |
 
-**Not:** Bekleyen 9 madde Sprint-04 debug + polish kapsamında.
+**Not:** Bekleyen 7 madde Sprint-04 kalan (TTL + Cloud Functions) + Sprint-05 adayı.
 
 ---
 
