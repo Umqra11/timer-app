@@ -1,7 +1,7 @@
 ---
 tags: [timer, decisions, technical-decisions, product-decisions, obsidian-ready]
 created: 2026-08-04
-updated: 2026-08-09 (S-0030 — Sprint-04 Debugging Pass tamamlandı (v10 + v11). Yeni karar yok; 6 bulgu #1-#6 düzeltildi/dokümante edildi, sprint plan kalan: TTL + Cloud Functions. Toplam 55 karar.)
+updated: 2026-08-09 (Sprint-05 Faz 1: /leaderboard single-room refactor tamamlandı. Yeni kararlar: D-059/060/061/062. Toplam 59 karar.)
 type: decisions-log
 ---
 
@@ -650,6 +650,45 @@ type: decisions-log
 - **Gerekçe:** Şu anki "aniden kapat" davranışı yarım kalmış görev bırakıyor. 30s = çoğu subagent görevi için yeterli. Tamamlanmayanlar temiz ölür, "donuyor" görüntüsü kaybolur.
 - **Etki:** Yarım kalmış 6 scout artık ya tamamlanır (en iyi) ya da 30s içinde net biçimde ölür. Kullanıcı tarafında "donuyor" → "kapanıyor, 30s" net davranışı.
 - **Pratik:** omp PR'ı bu protokolü uygulayana kadar, Patron'a öneri: 6 scout fan-out'tan kaçınılsın (D-056), 5+ omp penceresi tek seferde açılmasın.
+
+---
+
+### D-059 · Multi-room üyeliği engellendi (client + rules)
+- **Tarih:** 2026-08-09
+- **Bağlam:** Patron: "birden fazla Oda'ya üye olunması çok istediğim bir şey değil"
+- **Karar:** Her kullanıcı en fazla 1 odada. Engelleme:
+  - **Client:** `joinRoomByCode` ve `createRoom` öncesi `myRoomsCache.length >= 1` ise `{ ok: false, reason: 'already-in-room' }` (mobile/src/lib/stores/rooms.svelte.ts)
+  - **Rules:** `users/{uid}/joinedRooms/{roomId}` create için cross-user atomic check YOK (D-015 — auth olmadığı için rules bunu yapamaz); race window (iki sekmeden aynı anda join) kabul edilen trade-off. Sprint-04 #6 Cloud Function ile kapanır
+- **Gerekçe:** Çok odalı kullanıcıda dikkat dağılır, ana oda netleşmez. Discord sunucusu gibi tek çalışma alanı mental modeli.
+- **Etki:** `rooms.svelte.ts` (create/join pre-check), `firestore.rules` (joinedRooms path), UX (multi-room denemesinde inline hata)
+- **İlgili task:** Sprint-05 Faz 1, Task 3 (store pre-check) + Task 1 (rules delete — D-062)
+
+### D-060 · /leaderboard = tek-oda görünümü
+- **Tarih:** 2026-08-09
+- **Bağlam:** D-033 ile Liderlik sekmesi referans için eklendi ama içerik Sprint-03'te doldurulmadı. D-047 per-room leaderboard zaten /rooms/[id]'de var; Liderlik sekmesinin anlamı belirsizdi.
+- **Karar:** `/leaderboard` sekmesi kullanıcının (tek) odasının tam leaderboard görünümüdür. Oda yoksa empty state + "Oda kur" / "Davet koduyla katıl". Tek giriş noktası (D-061).
+- **Gerekçe:** Multi-room bloklu (D-059) olduğundan, Liderlik sekmesinin anlamlı içeriği budur. D-047 per-room leaderboard mantığı doğrudan yeniden kullanılır; sıfırdan yazım yok.
+- **Etki:** `routes/leaderboard/+page.svelte` yeniden yazıldı; subtitle "Bu hafta en çok çalışanlar" → "Odadaki sıralama"; `subscribeRoom` + `subscribeRoomMembers` + `subscribeReactions` mevcut pattern.
+- **İlgili task:** Sprint-05 Faz 1, Task 4
+
+### D-061 · /rooms ve /rooms/[id] kaldırıldı
+- **Tarih:** 2026-08-09
+- **Bağlam:** Multi-room bloklu (D-059); Liderlik = tek oda görünümü (D-060). /rooms listesi artık gereksiz (her kullanıcı en fazla 1 odada).
+- **Karar:** `routes/rooms/+page.svelte` ve `routes/rooms/[id]/+page.svelte` dosyaları silindi. Hiçbir redirect koyulmadı (D-060 ile birlikte tek giriş noktası /leaderboard). Nav.svelte fix: Nav hâlâ eski 'Odalar' → /rooms gösteriyordu (runtime 404 riski); Nav linki 'Liderlik' / /leaderboard olarak güncellendi.
+- **Gerekçe:** D-060 ile tutarlı; UX sadeleşir (3 sekme: Kronometre | Liderlik | Profil). D-033 ile zaten Nav'daki Odalar sekmesi Liderlik'e dönüştürülmüştü.
+- **Etki:** file-based routing — klasör silinince rotalar kaybolur. Nav.svelte'de link değiştirildi. Başka import yok (grep ile doğrulandı).
+- **İlgili task:** Sprint-05 Faz 1, Task 5 (route deletion + Nav.svelte link fix)
+
+### D-062 · Üye ayrılabilir, sahip silebilir
+- **Tarih:** 2026-08-09
+- **Bağlam:** D-059 ile kullanıcı tek odada. Eski/soğuk odada sıkışma kötü UX.
+- **Karar:**
+  - Üye olan kullanıcı → `leaveRoom(roomId)` ile `users/{uid}/joinedRooms/{roomId}` doc'unu silebilir (mobile/src/lib/firebase/rooms.ts)
+  - Sahip olan kullanıcı → `deleteRoom(roomId)` ile `rooms/{roomId}` doc'unu silebilir (D-049, mevcut)
+  - Yeni üyelik öncesi ayrılmak zorunlu (D-059 pre-check)
+- **Gerekçe:** Pasif odalarda sıkışma kötü UX. Patron istedi: "'Odadan ayrıl' butonu (üye ise)".
+- **Etki:** `mobile/src/lib/firebase/rooms.ts` `leaveRoom` eklendi; `mobile/firestore.rules` `users/{uid}/joinedRooms/{roomId}` `allow delete: if true`; UI'da sahip/üye farklı buton (sahip: kırmızı sil, üye: gri ayrıl).
+- **İlgili task:** Sprint-05 Faz 1, Task 1 (rules) + Task 2 (leaveRoom) + Task 4 (UI butonu + modal)
 
 ---
 
