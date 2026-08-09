@@ -689,6 +689,11 @@ type: decisions-log
 - **Gerekçe:** Pasif odalarda sıkışma kötü UX. Patron istedi: "'Odadan ayrıl' butonu (üye ise)".
 - **Etki:** `mobile/src/lib/firebase/rooms.ts` `leaveRoom` eklendi; `mobile/firestore.rules` `users/{uid}/joinedRooms/{roomId}` `allow delete: if true`; UI'da sahip/üye farklı buton (sahip: kırmızı sil, üye: gri ayrıl).
 - **İlgili task:** Sprint-05 Faz 1, Task 1 (rules) + Task 2 (leaveRoom) + Task 4 (UI butonu + modal)
+- **NOT — Kural deploy adımı (final-fix-run 2026-08-09):** Yukarıdaki rule değişiklikleri (`allow delete: if true`) repository'de mevcut, ANCAK henüz Firebase Console'a deploy edilmedi. Deploy edilmeden:
+  - Üye "Odadan ayrıl" tıklayınca `/leaderboard/+page.svelte → handleAction → fb.leaveRoom` Firestore `permission-denied` döner → C3 try/catch sayesinde 'Ayrılınamadı. Tekrar dene.' mesajı gösterilir (modal asılı kalmaz).
+  - Sahip "Odayı sil" tıklayınca aynı şekilde rules deleteDoc'u reddeder → 'Oda silinemedi. Tekrar dene.'
+  - Bu davranış planlıdır (final-fix-run I3 + I5): owner check `firestore.rules`'ta MVP'de aktif olmadığı için tek bir client-side protection var (rules). Final-fix-run I5 in-flight guard modal'ı düzgün kapatıyor.
+  - **Deploy adımı (plan/task dışı — Patron'a):** `firebase deploy --only firestore:rules` çalıştırılana kadar leave/delete işlemleri başarısız görünür. Deploy sonrası hiçbir code değişikliği gerekmez.
 
 ---
 
