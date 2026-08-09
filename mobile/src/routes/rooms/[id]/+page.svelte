@@ -69,11 +69,7 @@
 		unsubscribeReactions = reactions.subscribeReactions(roomId, (rs) => {
 			allReactions = rs;
 		});
-		// Timer'ı bu odaya bağla
-		const uname = username.current;
-		if (uname) {
-			timer.setRoomContext({ roomId, username: uname });
-		}
+		// Timer bağlaması $effect'te (reactive tracking — mount + username/roomId değişimi).
 	});
 
 	$effect(() => {
