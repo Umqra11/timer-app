@@ -279,6 +279,20 @@ export async function deleteRoom(roomId: string): Promise<{ ok: true } | { ok: f
 	return { ok: true };
 }
 
+/**
+ * Üye olan kullanıcı odadan ayrılır — joinedRooms/{roomId} doc'unu siler.
+ * rooms/{roomId} doc'una dokunmaz (sahip değilse zaten silemez; sahipse deleteRoom ayrı yol).
+ *
+ * D-062: üye ayrılabilir, sahip silebilir.
+ */
+export async function leaveRoom(roomId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+	const db = getDb();
+	if (!db) return { ok: false, reason: 'unavailable' };
+	const uid = getDeviceUid();
+	await deleteDoc(doc(db, `users/${uid}/joinedRooms/${roomId}`));
+	return { ok: true };
+}
+
 /* ---------------------------------------------------------------------------
  * Leaderboard — D-047, D-050, D-051
  * ------------------------------------------------------------------------- */
