@@ -172,7 +172,8 @@ export async function joinRoomByCode(inviteCode: string): Promise<JoinRoomResult
 }
 
 export function subscribeMyRooms(
-	cb: (rooms: RoomMeta[]) => void
+	cb: (rooms: RoomMeta[]) => void,
+	onError?: (err: Error) => void
 ): () => void {
 	const db = getDb();
 	if (!db) {
@@ -214,7 +215,10 @@ export function subscribeMyRooms(
 		},
 		(err) => {
 			console.error('[rooms] subscribe error', err);
-			cb([]);
+			// M5 fix: error callback opsiyonel — UI küçük hata kartı
+			// gösterebilir (önceden sessizce empty state'e düşüyordu).
+			if (onError) onError(err);
+			else cb([]);
 		}
 	);
 }

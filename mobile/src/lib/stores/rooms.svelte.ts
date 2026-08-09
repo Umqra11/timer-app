@@ -195,16 +195,22 @@ function createRoomsStore() {
 		 *
 		 * Returns: unsubscribe fonksiyonu
 		 */
-		subscribeMyRooms(cb: (items: fb.RoomMeta[]) => void): () => void {
+		subscribeMyRooms(
+			cb: (items: fb.RoomMeta[]) => void,
+			onError?: (err: Error) => void
+		): () => void {
 			if (!isFirebaseEnabled()) {
 				cb([]);
 				return () => {};
 			}
-			return fb.subscribeMyRooms((remote) => {
-				myRoomsCache = remote;
-				list = mergeFromFirestore(remote);
-				cb(remote);
-			});
+			return fb.subscribeMyRooms(
+				(remote) => {
+					myRoomsCache = remote;
+					list = mergeFromFirestore(remote);
+					cb(remote);
+				},
+				onError
+			);
 		},
 		/** Yeni oda oluştur. Kullanıcı otomatik katılır, hero olur. */
 		async create(name: string): Promise<CreateRoomResult> {
