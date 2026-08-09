@@ -64,7 +64,9 @@
 			checkingRooms = false;
 			return;
 		}
-		unsubscribeMyRooms = fb.subscribeMyRooms((rs) => {
+		// Store üzerinden subscribe — D-059 pre-check cache'i (myRoomsCache)
+		// güncel kalsın. fb.subscribeMyRooms doğrudan çağrılırsa cache atlanır.
+		unsubscribeMyRooms = rooms.subscribeMyRooms((rs) => {
 			myRooms = rs;
 			checkingRooms = false;
 		});

@@ -179,6 +179,24 @@ function createRoomsStore() {
 				unsubscribe = null;
 			}
 		},
+		/**
+		 * Store üzerinden subscribeMyRooms — D-059 pre-check cache'i her tüketicide
+		 * (örn. /leaderboard) güncel kalsın. Doğrudan fb.subscribeMyRooms çağrısı
+		 * cache'i atlar; bunun yerine bu fonksiyonu kullan.
+		 *
+		 * Returns: unsubscribe fonksiyonu
+		 */
+		subscribeMyRooms(cb: (items: fb.RoomMeta[]) => void): () => void {
+			if (!isFirebaseEnabled()) {
+				cb([]);
+				return () => {};
+			}
+			return fb.subscribeMyRooms((remote) => {
+				myRoomsCache = remote;
+				list = mergeFromFirestore(remote);
+				cb(remote);
+			});
+		},
 		/** Yeni oda oluştur. Kullanıcı otomatik katılır, hero olur. */
 		async create(
 			name: string
