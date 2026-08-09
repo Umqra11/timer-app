@@ -32,6 +32,10 @@
 	let unsubscribeRoom: (() => void) | null = null;
 	let unsubscribeMembers: (() => void) | null = null;
 	let unsubscribeReactions: (() => void) | null = null;
+	// C4 fix: touchRoom loop guard. Effect ilk kez bu oda için fire aldığında
+	// id'yi kaydet, sonraki snapshot'larda değişmediği sürece tekrar
+	// touchRoom çağırma.
+	let lastTouchedId: string | null = null;
 
 	// === Create modal ===
 	let createOpen = $state(false);
@@ -77,6 +81,23 @@
 		if (!rid || !isFirebaseEnabled()) return;
 		const uname = username.current;
 
+		// C4 fix: ID-based derived + once-per-room guard. Önceki kod effect
+		// içinde fb.touchRoom(rid) çağırıyordu; subscribeMyRooms her snapshot'ta
+		// fresh RoomMeta objesi üretiyor → myRoom referansı değişiyor → effect
+		// re-run → yeni touchRoom write → yeni snapshot → sonsuz döngü.
+		// Çözüm: lastTouchedId string tutarak sadece oda değişince touch yap.
+		if (lastTouchedId !== rid) {
+			lastTouchedId = rid;
+			void fb.touchRoom(rid);
+		}
+
+		// I4 fix: stale state cleanup — oda değiştiğinde eski room/members/
+		// reactions'ı sıfırla, böylece yeni snapshot öncesi yanlış veri
+		// (A'nın inviteCode'u B'nin altında) göstermeyelim.
+		room = null;
+		members = [];
+		allReactions = [];
+
 		unsubscribeRoom = fb.subscribeRoom(rid, (r) => {
 			room = r;
 		});
@@ -86,13 +107,17 @@
 		unsubscribeReactions = reactions.subscribeReactions(rid, (rs) => {
 			allReactions = rs;
 		});
-		void fb.touchRoom(rid);
 
 		if (uname) {
 			timer.setRoomContext({ roomId: rid, username: uname });
 		}
 
 		return () => {
+			// I3 fix: timer context reset — lifecycle listener'lar + presence
+			// subscription temizlensin. setRoomContext(null) her teardown'da
+			// güvenli: effect re-run'da yeni context set edilir, unmount'ta
+			// null kalır (istenen davranış).
+			timer.setRoomContext(null);
 			if (unsubscribeRoom) unsubscribeRoom();
 			if (unsubscribeMembers) unsubscribeMembers();
 			if (unsubscribeReactions) unsubscribeReactions();
@@ -103,6 +128,11 @@
 	});
 
 	onDestroy(() => {
+		// I3 fix: sayfa kapanırken timer context'i temizle (presence write
+		// eski odaya sızmasın). Aynı oda içindeyken setRoomContext(null)
+		// çağırmıyoruz — lastTouchedId sayfa aktif kaldığı sürece state'i
+		// temsil eder; onDestroy her zaman 'sayfa kapanıyor' demektir.
+		timer.setRoomContext(null);
 		if (unsubscribeMyRooms) unsubscribeMyRooms();
 		if (unsubscribeRoom) unsubscribeRoom();
 		if (unsubscribeMembers) unsubscribeMembers();
@@ -393,13 +423,12 @@
 		<!-- Davet kodu kartı -->
 		<div class="rounded-2xl border border-border bg-surface p-4">
 			<p class="text-xs font-medium uppercase tracking-wider text-fg-subtle">Davet kodu</p>
-			<div class="mt-2 flex items-center justify-between rounded-xl bg-bg/60 px-4 py-3">
-				<div class="font-mono text-xl tracking-[0.2em] text-fg">{room.inviteCode}</div>
+			{#snippet copyButton(code: string)}
 				<button
 					type="button"
 					onclick={async () => {
 						try {
-							await navigator.clipboard.writeText(room!.inviteCode);
+							await navigator.clipboard.writeText(code);
 						} catch {
 							alert('Kopyalanamadı — kodu elle seçip kopyalayabilirsin.');
 						}
@@ -408,6 +437,10 @@
 				>
 					Kopyala
 				</button>
+			{/snippet}
+			<div class="mt-2 flex items-center justify-between rounded-xl bg-bg/60 px-4 py-3">
+				<div class="font-mono text-xl tracking-[0.2em] text-fg">{room.inviteCode}</div>
+				{@render copyButton(room.inviteCode)}
 			</div>
 		</div>
 
