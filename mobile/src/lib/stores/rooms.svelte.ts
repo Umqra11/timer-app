@@ -107,6 +107,9 @@ function saveLastJoinedId(id: string) {
 function createRoomsStore() {
 	const initial: Room[] = isFirebaseEnabled() ? [] : loadLocal();
 	let list = $state<Room[]>(initial);
+	// D-059: pre-check için Firestore snapshot cache. İlk snapshot öncesi boş —
+	// race window kabul (D-015).
+	let myRoomsCache = $state<fb.RoomMeta[]>([]);
 
 	const sorted = $derived([...list].sort((a, b) => (b.joinAt ?? 0) - (a.joinAt ?? 0)));
 
@@ -166,6 +169,7 @@ function createRoomsStore() {
 				return;
 			}
 			unsubscribe = fb.subscribeMyRooms((remote) => {
+				myRoomsCache = remote;
 				list = mergeFromFirestore(remote);
 			});
 		},
@@ -176,9 +180,16 @@ function createRoomsStore() {
 			}
 		},
 		/** Yeni oda oluştur. Kullanıcı otomatik katılır, hero olur. */
-		async create(name: string): Promise<Room | null> {
+		async create(
+			name: string
+		): Promise<Room | null | { ok: false; reason: 'already-in-room' }> {
 			const trimmed = name.trim();
 			if (trimmed.length === 0 || trimmed.length > 40) return null;
+
+			// D-059: kullanıcı zaten bir odada — yeni oda oluşturmayı engelle
+			if (myRoomsCache.length >= 1) {
+				return { ok: false, reason: 'already-in-room' };
+			}
 
 			if (isFirebaseEnabled()) {
 				const created = await fb.createRoom(trimmed);
@@ -211,9 +222,16 @@ function createRoomsStore() {
 			return room;
 		},
 		/** Davet koduna göre odaya katıl. */
-		async joinByCode(code: string): Promise<Room | null> {
+		async joinByCode(
+			code: string
+		): Promise<Room | null | { ok: false; reason: 'already-in-room' }> {
 			const target = code.trim().toUpperCase();
 			if (!target) return null;
+
+			// D-059: kullanıcı zaten bir odada — ikinci odaya katılmayı engelle
+			if (myRoomsCache.length >= 1) {
+				return { ok: false, reason: 'already-in-room' };
+			}
 
 			if (isFirebaseEnabled()) {
 				const joined = await fb.joinRoomByCode(target);
