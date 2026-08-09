@@ -267,16 +267,23 @@ export async function deleteRoom(roomId: string): Promise<{ ok: true } | { ok: f
 	if (!db) return { ok: false, reason: 'unavailable' };
 	const uid = getDeviceUid();
 
-	const roomRef = doc(db, `${ROOMS}/${roomId}`);
-	const snap = await getDoc(roomRef);
-	if (!snap.exists()) return { ok: false, reason: 'not-found' };
-	const data = snap.data() as { ownerUid: string };
-	if (data.ownerUid !== uid) return { ok: false, reason: 'forbidden' };
+	try {
+		const roomRef = doc(db, `${ROOMS}/${roomId}`);
+		const snap = await getDoc(roomRef);
+		if (!snap.exists()) return { ok: false, reason: 'not-found' };
+		const data = snap.data() as { ownerUid: string };
+		if (data.ownerUid !== uid) return { ok: false, reason: 'forbidden' };
 
-	// joinedRooms referansı orphan bırakılıyor (rules: delete: if false). Sprint-04
-	// Cloud Function ile recursive delete.
-	await deleteDoc(roomRef);
-	return { ok: true };
+		// joinedRooms/{roomId} doc'unu da temizle — D-062: rules delete: true.
+		// Yoksa sahip kendi joinedRooms doc'unda orphan kalır, /leaderboard
+		// myRooms listesinde oda görünür durumda kalır (C2 fix).
+		await deleteDoc(roomRef);
+		await deleteDoc(doc(db, `users/${uid}/${JOINED}/${roomId}`));
+		return { ok: true };
+	} catch (err) {
+		console.error('[rooms] deleteRoom failed', err);
+		return { ok: false, reason: 'error' };
+	}
 }
 
 /**

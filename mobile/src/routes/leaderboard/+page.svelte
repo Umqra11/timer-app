@@ -339,6 +339,50 @@
 				</button>
 			</div>
 		</div>
+	{:else if !room}
+		<!-- Not-found state — joinedRooms'da var ama room doc silinmiş (C2).
+		     Normal akışta deleteRoom joinedRooms doc'unu da siler (D-062), bu
+		     görünüm sadece stale snapshot / orphan edge-case için güvenlik ağı. -->
+		<div class="space-y-6 pt-6 text-center">
+			<div
+				class="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-surface-2"
+			>
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					width="32"
+					height="32"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					class="text-fg-subtle"
+				>
+					<circle cx="12" cy="12" r="10" />
+					<path d="M12 8v4" />
+					<path d="M12 16h.01" />
+				</svg>
+			</div>
+			<p class="text-lg font-semibold">Bu oda artık mevcut değil</p>
+			<p class="text-sm text-fg-muted">
+				{myRoom?.name ?? 'Oda'} silinmiş olabilir. Yeni bir odaya katıl veya kendi odanı kur.
+			</p>
+			<div class="space-y-3 pt-2">
+				<button
+					onclick={openJoin}
+					class="block w-full rounded-full bg-accent px-6 py-4 text-base font-semibold text-black active:bg-accent-hover"
+				>
+					Farklı bir odaya katıl
+				</button>
+				<button
+					onclick={openCreate}
+					class="block w-full rounded-full border border-border bg-surface px-6 py-4 text-base font-semibold text-fg active:bg-surface-2"
+				>
+					Yeni oda kur
+				</button>
+			</div>
+		</div>
 	{:else if room}
 		<!-- Oda başlığı -->
 		<header class="space-y-1">
