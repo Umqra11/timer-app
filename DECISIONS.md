@@ -694,6 +694,7 @@ type: decisions-log
   - Sahip "Odayı sil" tıklayınca aynı şekilde rules deleteDoc'u reddeder → 'Oda silinemedi. Tekrar dene.'
   - Bu davranış planlıdır (final-fix-run I3 + I5): owner check `firestore.rules`'ta MVP'de aktif olmadığı için tek bir client-side protection var (rules). Final-fix-run I5 in-flight guard modal'ı düzgün kapatıyor.
   - **Deploy adımı (plan/task dışı — Patron'a):** `firebase deploy --only firestore:rules` çalıştırılana kadar leave/delete işlemleri başarısız görünür. Deploy sonrası hiçbir code değişikliği gerekmez.
+  - **✅ Deploy edildi (2026-08-11):** Patron Firebase Console üzerinden rules'u deploy etti. `users/{uid}/joinedRooms/{roomId}` `allow delete: if true` artık aktif. "Odadan ayrıl" / "Odayı sil" butonları canlıda çalışır.
 
 ---
 
