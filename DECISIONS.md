@@ -1,7 +1,7 @@
 ---
 tags: [timer, decisions, technical-decisions, product-decisions, obsidian-ready]
 created: 2026-08-04
-updated: 2026-08-09 (Sprint-05 Faz 1: /leaderboard single-room refactor tamamlandı. Yeni kararlar: D-059/060/061/062. Toplam 62 karar.)
+updated: 2026-08-11 (Sprint-05 Faz 1.5: Leaderboard UX polish tamamlandı. Yeni kararlar: D-063/064/065/066/067/068. Toplam 68 karar.)
 type: decisions-log
 ---
 
@@ -695,6 +695,69 @@ type: decisions-log
   - Bu davranış planlıdır (final-fix-run I3 + I5): owner check `firestore.rules`'ta MVP'de aktif olmadığı için tek bir client-side protection var (rules). Final-fix-run I5 in-flight guard modal'ı düzgün kapatıyor.
   - **Deploy adımı (plan/task dışı — Patron'a):** `firebase deploy --only firestore:rules` çalıştırılana kadar leave/delete işlemleri başarısız görünür. Deploy sonrası hiçbir code değişikliği gerekmez.
   - **✅ Deploy edildi (2026-08-11):** Patron Firebase Console üzerinden rules'u deploy etti. `users/{uid}/joinedRooms/{roomId}` `allow delete: if true` artık aktif. "Odadan ayrıl" / "Odayı sil" butonları canlıda çalışır.
+
+---
+
+## 🎨 Sprint-05 Faz 1.5 — Leaderboard UX Polish (S-0033)
+
+> Patron canlı test feedback'i sonrası Liderlik sekmesinin 6 hızlı UX iyileştirmesi. Code tamam, docs + kararlar bu girişlerle senkronize.
+
+### D-063 · localStorage cache for myRooms (auto-load on re-entry)
+- **Tarih:** 2026-08-11
+- **Bağlam:** D-059 ile /leaderboard mount'unda Firestore subscribe resolve olana kadar ~100-300 ms boş state flash'ı oluşuyor. Kullanıcı kendi odasını açarken gereksiz "Oda yok" CTA'sı görüyor.
+- **Karar:** `myRoomsCache` `localStorage`'da versioned key (`timer_my_rooms_v1`) altında tutulur. `loadCachedMyRooms()` sync hydrate (mount'ta < 1 ms), `saveCachedMyRooms()` her subscribe callback'inde idempotent write. Quota-exceeded sessizce swallow.
+- **Gerekçe:** Empty state flash'ı sadece client-side cache ile çözülebilir (Firestore persist cache MVP'de yok). JSON parse try/catch + Array.isArray guard bozuk veriye karşı dayanıklı.
+- **Etki:** `mobile/src/lib/stores/rooms.svelte.ts` (`loadCachedMyRooms`, `saveCachedMyRooms`, `MY_ROOMS_CACHE_KEY`); `+page.svelte` mount'ta cache hydrate, sonra Firestore subscribe merge. Offline-friendly.
+- **İlgili task:** Sprint-05 Faz 1.5, Task 1
+
+### D-064 · Yanıp sönen nokta active indicator (CSS keyframes, accessibility-first)
+- **Tarih:** 2026-08-11
+- **Bağlam:** D-040 "🟢 Çalışıyorsun" status text'i tanımlı ama leaderboard satırındaki görsel cue (2px statik dot) yetersiz — aktif kullanıcı ile boş satır ayırt edilemiyor.
+- **Karar:** 6 px yeşil yuvarlak nokta (`bg-running`), CSS `@keyframes pulse-running` opacity 1 → 0.35 → 1 (1.5 s ease infinite). `aria-label="şu an çalışıyor"` screen reader için.
+- **Gerekçe:** Pulse, "şu an çalışıyor" hissini statik noktadan daha net verir (Apple Clock benzeri). `prefers-reduced-motion` desteği opsiyonel — Sprint-05 Faz 2 polish'ine bırakıldı (ana akış etkilenmez).
+- **Etki:** `mobile/src/app.css` tek `@keyframes pulse-running` eklendi (Tailwind v4 dışı tek istisna, brief onaylı); `+page.svelte` `class="pulse-running"`. `bg-amber-400` paused dot kaldırıldı — sadece running gösterilir.
+- **İlgili task:** Sprint-05 Faz 1.5, Task 2
+
+### D-065 · Minimalist invite code (tek satır, icon button)
+- **Tarih:** 2026-08-11
+- **Bağlam:** Eski davet kodu kartı (border + padding + başlık + kod + kopyala) fazla yer kaplıyor, "asıl içerik" olan leaderboard'a yer bırakmıyor. Patron "davet kodu küçük olsun, kart olmasın" dedi.
+- **Karar:** Davet kodu satırı → tek satır inline: code text (mono font) + 36×36 icon button (Copy). Dış kart kutusu, başlık YOK. iOS HIG 44px tap target altında ama brief verbatim.
+- **Gerekçe:** Compact presentation modern, dikkat dağıtmaz. Icon button görsel ağırlığı azaltır, copy success feedback kısa toast/snippet.
+- **Etki:** `+page.svelte` RoomView refactor — davet kodu bloğu tek satır `<code>` + icon button'a indirgendi. Surrounding div kaldırıldı.
+- **İlgili task:** Sprint-05 Faz 1.5, Task 3
+
+### D-066 · Self-reaction removed (UI + backend guard `'self-target'`)
+- **Tarih:** 2026-08-11
+- **Bağlam:** D-052 reactions'da "Tepki yaz (kendine)" butonu vardı — sosyal anlamı yok (self-affirmation), UI kirliliği yaratıyor. DevTools ile bypass mümkün.
+- **Karar:**
+  - **UI:** "Tepki yaz (kendine)" butonu `+page.svelte`'den tamamen kaldırıldı.
+  - **Backend:** `sendReaction()` içinde `senderUid === targetUid` guard `readRateLimit`'ten ÖNCE çalışır (rate-limit tüketilmez): `{ ok: false, reason: 'self-target' }` döner (`reactions.ts:133`).
+- **Gerekçe:** UI bypass'a karşı backend guard zorunlu (defense-in-depth). Guard önce çalışarak rate limit tüketimini önler — kötü niyetli client rate limit'i dolduramaz.
+- **Etki:** `mobile/src/lib/firebase/reactions.ts` union type'a `'self-target'` reason eklendi; `+page.svelte` button kaldırıldı ve modal kapsamı daraltıldı. Error mapping UI'a "kendine tepki yazamazsın" mesajı gösterir.
+- **İlgili task:** Sprint-05 Faz 1.5, Task 4
+
+### D-067 · Sessions subcollection (rolling week stats altyapısı)
+- **Tarih:** 2026-08-11
+- **Bağlam:** D-018 stats MVP'de sadece "bugün" gösteriyor. D-047 rolling week "son 7 gün toplam" için persistent session log gerekiyor — `users/{uid}.totalSeconds` aggregate tüm zamanlar, "son 7 gün" türetilemez (geçmiş session verisi yok).
+- **Karar:** Yeni Firestore subcollection `users/{uid}/sessions/{sessionId}`. Her `timer.finish()`'te bir doc yazılır:
+  - `uid: string`, `dayKey: string` (YYYY-MM-DD TR), `startedAt: Timestamp`, `endedAt: Timestamp` (serverTimestamp), `elapsedMs: number`
+  - `subscribeUserWeeklySeconds(uid)` — son 7 gün rolling sum + current running elapsedMs
+  - `todayKeyForSession` re-export (`todayKey`)
+- **Gerekçe:** Persistent session log "bu hafta", "geçen hafta", streak ileride trend karşılaştırması için zorunlu. `users/{uid}.totalSeconds` artık secondary cache olarak kalabilir (geriye dönük uyumlu).
+- **Etki:** `mobile/src/lib/firebase/sessions.ts` (yeni, `WeekSession`, `subscribeUserWeeklySeconds`); `stats.ts` rolling week; `timer.svelte.ts:169` `finish()` sessions write; `firestore.rules` `users/{uid}/sessions/{sessionId}` match eklendi (`allow read, create: if true` — MVP auth-free, Sprint-05 Faz 2'de deploy).
+- **İlgili task:** Sprint-05 Faz 1.5, Task 5
+
+### D-068 · Weekly live timer in leaderboard (liveSeconds pure function + tick)
+- **Tarih:** 2026-08-11
+- **Bağlam:** D-047 leaderboard `totalSeconds` (tüm zamanlar) gösteriyordu. D-067 ile rolling week artık hesaplanabilir. Patron "haftalık canlı süre aksın" dedi (running kullanıcı için saniye saniye artmalı).
+- **Karar:** Leaderboard satırı `weeklySeconds` (7 gün rolling sum) ile ticks:
+  - `subscribeUserWeeklySeconds(uid)` — Firestore live data
+  - `liveSeconds(entry, now): number` — pure function: `lastSeen ? Math.max(0, (now - lastSeen) / 1000) : 0` (clock-skew safe)
+  - Render: `formatHMS(weeklySeconds + liveSeconds(entry, Date.now()))`
+  - `setInterval(1000)` mounted rooms only (cleanup onDestroy)
+- **Gerekçe:** Pure function test edilebilir (Vitest); ticking client-side Firestore bandwidth ucuz. `lastSeen = presence.updatedAt` (D-050 visibility change listener 1-2 sn'de write tetikler — lastSeen ≈ "şu anda aktif" yaklaşımı yeterli, smoke test onayladı).
+- **Etki:** `mobile/src/lib/utils/live-timer.ts` (`liveSeconds`, `formatHMS` helpers); `+page.svelte` `liveSeconds` render + 1s interval; `LeaderboardEntry.weeklySeconds: number` tip tanımı güncellendi. `totalText` helper kullanılmadığı için kaldırıldı.
+- **İlgili task:** Sprint-05 Faz 1.5, Task 6
 
 ---
 

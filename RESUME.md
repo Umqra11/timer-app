@@ -1,7 +1,7 @@
 ---
 tags: [timer, resume, session-handoff, obsidian-ready]
 created: 2026-08-04
-updated: 2026-08-09 (S-0030 — Sprint-04 Debugging Pass tamamlandı: v10 setRoomContext duplicate fix (commit b69bd93, pushed) + v11 (rule structure validation, console.log cleanup, expireAt/perf/race doc comments). Sprint-04 kalan: TTL policy enable (patron) + Cloud Functions (server-side rate limit, owner check, recursive delete).)
+updated: 2026-08-11 (S-0033 — Sprint-05 Faz 1.5 Leaderboard UX polish tamamlandı: 6 yeni karar (D-063..D-068), localStorage cache + yanıp sönen nokta + minimalist invite + self-reaction guard + sessions subcollection + weekly live timer. Sıradaki: Sprint-05 Faz 2 — home stats fix + firestore rules tightening + TTL policy deploy (patron).)
 type: session-resume
 ---
 
@@ -16,10 +16,12 @@ type: session-resume
 
 ## 📍 Şu An Neredeyiz
 
-**Aşama:** Sprint-04 Debugging Pass tamamlandı (v10 + v11), **TTL policy + Cloud Functions � Patron işlemi**
-**Tarih:** 2026-08-09 (S-0030)
+**Aşama:** Sprint-05 Faz 1 (single-room refactor, S-0032) + Faz 1.5 (leaderboard UX polish, S-0033) tamamlandı, **Sprint-05 Faz 2 planlama aşamasında — home stats fix + rules tightening + TTL deploy (patron)**
+**Tarih:** 2026-08-11 (S-0033)
 **Patron:** Enes
-**Canlı:** https://timerviber.web.app (otomatik deploy, `Umqra11/timer-app` GitHub repo, 10 commit — v10 b69bd93 dahil)
+**Canlı:** https://timerviber.web.app (otomatik deploy, `Umqra11/timer-app` GitHub repo, ~28 commit — son push `1aa1413` Sprint-05 Faz 1.5 sonunda)
+
+> ⚠️ **BACKLOG AKTİF (2026-08-11)** → `[[IDEAS#🔍 Backlog — 2026-08-11 (Gözden Geçirilecek)|IDEAS.md › Backlog]]` bölümünde işlenmemiş noktalar var. Önce onları gözden geçir.
 
 ### ✅ Sprint-03 — Tamamlanan (S-0024..S-0028)
 
@@ -112,6 +114,42 @@ yanında kalan bir verimsizlikti.
 
 ---
 
+## ✅ Sprint-05 Faz 1 — Single-room refactor (S-0032, 2026-08-11)
+
+D-059/D-060/D-061/D-062 ile Liderlik sekmesinin "tek oda, tek giriş noktası" modeline geçişi:
+
+- **D-059** — Multi-room üyeliği engellendi: `rooms.svelte.ts` `myRoomsCache.length >= 1` pre-check; `firestore.rules` `joinedRooms` delete:true. Cross-user atomic check MVP'de yok (D-015 — auth-free); race window kabul edilen trade-off (Sprint-05 Faz 3 Cloud Function ile kapanır).
+- **D-060** — `/leaderboard` = tek-oda görünümü. Boş state: "Oda kur" / "Davet koduyla katıl". D-047 per-room leaderboard mantığı doğrudan yeniden kullanıldı; subtitle "Bu hafta en çok çalışanlar" → "Odadaki sıralama".
+- **D-061** — `routes/rooms/+page.svelte` + `routes/rooms/[id]/+page.svelte` tamamen silindi. Hiçbir redirect yok. `Nav.svelte` "Odalar" → "Liderlik" güncellendi + trophy icon typo fix (I6 — branch-introduced bug).
+- **D-062** — `leaveRoom(roomId)` (üye) + `deleteRoom(roomId)` (sahip, D-049 mevcut). `users/{uid}/joinedRooms/{roomId} delete:true`. **✅ Deploy edildi (2026-08-11)** Firebase Console üzerinden — canlıda "Odadan ayrıl" / "Odayı sil" çalışıyor.
+
+**Final-fix-run (opus):** 4 Critical + 7 Important — `myRoomsCache wire-up`, `not-found state + joinedRooms cleanup on owner delete`, `try/catch + error reasons` (C3), `touchRoom loop + stale state + timer context reset` (C4), `discriminated union return types` (I1+I2), `in-flight guard` (I5), `trophy SVG typo` (I6 — branch-introduced), `D-062 deploy not`, `subscribeMyRooms error callback` (M5).
+
+**Sprint-05 Faz 1 = 21 commit**, hepsi main'e push, canlıda cross-user "ayrıl/sil" round-trip çalışıyor.
+
+---
+
+## ✅ Sprint-05 Faz 1.5 — Leaderboard UX polish (S-0033, 2026-08-11)
+
+6 hızlı UX iyileştirmesi — patron canlı test feedback sonrası:
+
+- **D-063** — localStorage cache for myRooms → odaya otomatik dön (empty state flash yok). `timer_my_rooms_v1` versioned key + JSON.parse try/catch. Offline-friendly.
+- **D-064** — Yanıp sönen nokta (CSS keyframes `pulse-running` opacity 1 → 0.35 → 1, 1.5 s ease infinite). 6 px yeşil nokta + `aria-label="şu an çalışıyor"` a11y. Sadece running gösterilir, paused sadece yazıda.
+- **D-065** — Davet kodu minimalist tek satır (dış kart kaldırıldı, 36×36 icon button). Tek satır `<code>` + copy button.
+- **D-066** — Self-reaction tamamen kaldırıldı (UI + backend guard `'self-target'`). Guard `readRateLimit`'ten ÖNCE çalışır — rate-limit kötü niyetli client tarafından doldurulamaz.
+- **D-067** — Sessions subcollection (`users/{uid}/sessions/{sid}`) + rolling week stats. Her `timer.finish()`'te bir doc: `uid, dayKey, startedAt, endedAt, elapsedMs`. `subscribeUserWeeklySeconds` son 7 gün sum.
+- **D-068** — Haftalık canlı süre leaderboard'da tick eder (`liveSeconds` pure function + 1 s interval). `formatHMS(weeklySeconds + liveSeconds(entry, Date.now()))`. Pure function Vitest ile test edildi.
+
+**7 commit Faz 1.5 boyunca** (6465b5a..1aa1413): localStorage cache, pulse-running keyframes, minimalist invite, self-reaction guard (1 fix round), sessions subcollection (1 fix round — Timestamp cutoff alignment), weekly live timer (1 fix round — clock-skew safety).
+
+**Notlar:**
+- `prefers-reduced-motion` desteği Faz 2 polish'inde eklenecek (Task 2 step'inde opsiyonel bırakıldı).
+- `SessionDoc.endedAt: number` type vs runtime Timestamp — type-hygiene follow-up, Sprint-05 Faz 2 backlog'unda.
+- **Pre-existing `room is possibly null` svelte-check error `leaderboard/+page.svelte:455`** — Task 5 review'ında görüldü, Task 6 da bu satıra dokundu ama fix'lemedi (kapsam dışı). Sprint-05 Faz 2'de `null` guard veya non-null assertion ile çözülecek.
+- Sessions `firestore.rules` deploy patron işlemi (Sprint-05 Faz 2'ye planlı). Deploy edilmediyse client-side write MVP auth-free olduğu için yine başarılı olur; smoke test ile doğrulandı.
+
+---
+
 ## 🛠️ Teknoloji Stack (D-009, D-015, D-020, D-044)
 
 | Katman | Seçim |
@@ -119,12 +157,31 @@ yanında kalan bir verimsizlikti.
 | Frontend | SvelteKit (PWA) — `adapter-static` |
 | Hosting | 🔥 Firebase Hosting (D-044) — `https://timerviber.web.app` |
 | Backend + DB + Realtime | 🔥 Firestore (europe-west3, eur3) |
-## 📊 Commit'ler (Sprint-03 + Sprint-04)
+## 📊 Commit'ler (Sprint-03 + Sprint-04 + Sprint-05 Faz 1 + Faz 1.5)
 
 ```
+(Sprint-05 Faz 1.5 — Leaderboard UX polish — S-0033)
+1aa1413 feat(leaderboard): weekly live timer — rolling 7-day sum ticks for running users
+3eadaf8 fix(stats): align session cutoff and simplify timer start
+0fe1f64 feat(stats): sessions subcollection + rolling week stats
+6b37662 fix(leaderboard): remove self-reaction UI + backend guard
+c22bb26 refactor(leaderboard): minimalist invite code — single row with icon button
+a614c74 feat(leaderboard): pulsing dot indicator for running users
+6465b5a feat(leaderboard): localStorage cache for myRooms — auto-load on re-entry
+(Sprint-05 Faz 1 — Single-room refactor — S-0032)
+52031ab docs(vault): Sprint-05 Faz 1 daily note (S-0032)
+3d7dd60 docs(decisions): D-062 deploy onayı — 2026-08-11
+9b91f4d fix(rooms): subscribeMyRooms error callback — empty state'i ayır
+bb1cbdc docs(decisions): D-062 not — rules deploy adımı eklendi
+4f166f0 fix(icons): trophy SVG typo — remove spurious minus
+81303d4 fix(leaderboard): in-flight guard for delete/leave action
+6ddabf3 refactor(store): discriminated union return types — I1 + I2
+5e233d6 fix(leaderboard): touchRoom loop — ID-based derived + once-per-room guard
+8ddea93 fix(rooms): try/catch + error reasons in Firestore mutations
+c3aa15e feat(leaderboard): not-found state + cleanup joinedRooms on owner delete
+0432a26 fix(rooms): wire myRoomsCache — D-059 pre-check aktif (C1)
 (Sprint-04 Debugging Pass — S-0030)
 b69bd93 fix(rooms): remove duplicate setRoomContext call in onMount (v10)  ← pushed
-(Sprint-04 v11: rule + console + docs — yerel, push bekliyor)
 (Sprint-04 Aşama 1-4)
 023d575 fix(sprint-04): SDK reactions permission-denied — rateLimit rule + getDeviceUid
 866f882 docs(vault): Sprint-03 Faz 1+2+3 tamamlandı + Sprint-04 plan
@@ -136,6 +193,8 @@ b69bd93 fix(rooms): remove duplicate setRoomContext call in onMount (v10)  ← p
 e62938a feat(sprint-02): Firebase integration, Firestore stores, stats, click sound
 48f3098 chore(vercel): drop Vercel adapter, switch to adapter-static (D-044)
 ```
+
+**Toplam:** ~28 commit Sprint-03'ten bugüne. Son commit Faz 1.5 sonunda (`1aa1413`).
 
 ---
 
@@ -152,21 +211,28 @@ e62938a feat(sprint-02): Firebase integration, Firestore stores, stats, click so
 
 ---
 
-## 📋 Sprint-04 Plan (Yeni Session İçin)
+## 📋 Sprint-05 Plan (Yeni Session İçin)
 
 ### ✅ Tamamlandı
 
 - [x] Aşama 1: Debug (SDK `sendReaction` permission-denied) — kök neden bulundu (rateLimit rule + yanlış targetUid), fix deploy edildi
 - [x] Aşama 4: Verification — canlı smoke cross-user round-trip çalışıyor
 - [x] **Debugging Pass (S-0030)** — 6 bulgu #1-#6 ele alındı, v10 + v11 tamamlandı
+- [x] **Sprint-05 Faz 1 — Single-room refactor (S-0032)** — D-059/060/061/062, 21 commit, final-fix-run 4 Critical + 7 Important çözüldü, D-062 rule deploy patron işlemi tamam
+- [x] **Sprint-05 Faz 1.5 — Leaderboard UX polish (S-0033)** — D-063..D-068, 6 UX iyileştirmesi, 7 commit, pre-existing svelte-check error (`room is possibly null`) Faz 2'ye bırakıldı
 
-### ⏳ Kalan (Manuel patron işlemi + Sprint-05 adayı)
+### ⏳ Kalan (Manuel patron işlemi + Sprint-05 Faz 2)
 
-- [ ] **TTL policy enable (patron işlemi)** — Firebase Console → Firestore → Indexes & TTL → `expireAt` field, 14400 saniye
+- [ ] **TTL policy enable (patron işlemi)** — Firebase Console → Firestore → Indexes & TTL → `expireAt` field, 14400 saniye (D-052 ephemeral reactions)
+- [ ] **Sessions rule deploy (patron işlemi)** — D-067 ile eklenen `users/{uid}/sessions/{sid}` match rule deploy edilmeli (MVP auth-free — write client-side yine başarılı olur, deploy sıkılaştırma)
+- [ ] **Home stats fix (D-018)** — `+page.svelte` hardcoded `0dk` → reactive `readStats()`. Küçük kapsam, tek dosya.
+- [ ] **Firestore delete rules tightening (D-049)** — `allow delete: if true` → ownerUid custom check. D-015 nedeniyle kısıtlı (cross-user atomic check yapılamaz rules'ta, Cloud Function gerekir).
+- [ ] **`prefers-reduced-motion` desteği (D-064 polish)** — Task 2'de opsiyonel bırakıldı.
+- [ ] **`SessionDoc.endedAt` type-hygiene (D-067 follow-up)** — runtime Timestamp vs tip `number` mismatch — narrow.
+- [ ] **Pre-existing svelte-check fix** — `leaderboard/+page.svelte:455` `room is possibly null` — null guard veya non-null assertion.
 - [ ] Cloud Function: `users/{uid}/rateLimit/reactions` server-side atomic check (`runTransaction` — server-side async `getDoc` OK)
 - [ ] Cloud Function: oda silme recursive (presence + reactions + joinedRooms)
 - [ ] Cloud Function: oda sahibi custom check (uid karşılaştırması — D-049 sıkılaştırma)
-- [ ] Stats rolling week sum (D-018)
 - [ ] Username reclamation policy (D-015)
 - [ ] Console error monitoring
 
@@ -174,24 +240,26 @@ e62938a feat(sprint-02): Firebase integration, Firestore stores, stats, click so
 
 ## 💡 Yeni Session İçin Hızlı Hatırlatma
 
-**Patron ilk mesajda:** "Timer kaldığımız yerden devam" veya Sprint-04'e atla
+**Patron ilk mesajda:** "Timer kaldığımız yerden devam" veya Sprint-05 Faz 2'ye atla
 
 **Müdür (sen, Mavis) yapacağın:**
 1. `RESUME.md` oku (bu dosya)
 2. `STATUS.md` kontrol et
-3. `DECISIONS.md` gözden geçir (55 karar — D-001'den D-055'e)
-4. Canlı test: https://timerviber.web.app/rooms/0d0aafd0-abbe-4264-a47c-d7ae557d3d1e
-5. Patronun TTL policy enable işlemini bekle, sonra kalan listeye devam et
+3. `DECISIONS.md` gözden geçir (68 karar — D-001'den D-068'e; D-063-068 Sprint-05 Faz 1.5)
+4. **`IDEAS.md` › 🔍 Backlog bölümünü kontrol et** — patronun eklediği işlenmemiş bug/iyileştirme noktaları olabilir
+5. Canlı test: https://timerviber.web.app/ → **Liderlik** sekmesi (D-061 ile /rooms route silindi — direkt /leaderboard üzerinden odaya erişim)
+6. Patronsal kalan: TTL policy + sessions rule deploy (Firebase Console manuel işlem)
 
 **Önemli notlar:**
 - v6 fix (`setRoomContext.onRemote` opsiyonel) Sprint-02'den kalma KRİTİK bug fix — presence yazımı çözer
 - v8 fix (`runTransaction` → sequential get+set) Sprint-03 Faz 3'te bulundu — async getDoc uyumsuz
 - **v9 fix** (Sprint-04 Aşama 1-4): (a) `/users/{uid}/rateLimit` subcollection rule eklendi, (b) `+page.svelte` `getDeviceUid()` kullanıyor — iki bağımsız bug, ikisi de fix'lendi
+- **D-061** ile `/rooms/*` routes tamamen silindi — canlı test için artık **/leaderboard** sekmesi tek giriş noktası
 - CDN cache: Her deploy sonrası 30 saniye bekle, `?v=N` query string ile bypass
 
 ---
 
-**Son güncelleme:** 2026-08-07 (S-0029 — Sprint-04 Aşama 1-4 tamamlandı, Aşama 5 ⏳ TTL policy patron işlemi. 8 commit, 55 karar, canlıda SDK + cross-user tepki çalışıyor.)
+**Son güncelleme:** 2026-08-11 (S-0033 — Sprint-05 Faz 1.5 Leaderboard UX polish tamamlandı, 6 yeni karar (D-063..D-068) + Faz 1 single-room refactor (D-059..D-062) docs eklendi, toplam 68 karar. Sıradaki: Sprint-05 Faz 2 — home stats fix + firestore rules tightening + TTL deploy.)
 **Patron:** Enes
 **Müdür:** Mavis
-**Sıradaki sprint:** Sprint-04 — Debug + Polish
+**Sıradaki sprint:** Sprint-05 Faz 2 — Polish + Home stats

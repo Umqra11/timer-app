@@ -1,13 +1,13 @@
 ---
 tags: [timer, status, project-status, obsidian-ready]
 created: 2026-08-04
-updated: 2026-08-09 (S-0030 — Sprint-04 Debugging Pass tamamlandı: v10 setRoomContext duplicate fix (commit b69bd93, pushed), v11 rule structure validation + console.log cleanup + expireAt/perf/race doc comments. TTL policy ⏳ hâlâ patron işlemi, Cloud Function Sprint-04 kalan işi.)
+updated: 2026-08-11 (S-0033 — Sprint-05 Faz 1.5: Leaderboard UX polish tamamlandı. 6 yeni karar (D-063..D-068), localStorage cache + yanıp sönen nokta + minimalist invite + self-reaction guard + sessions subcollection + weekly live timer. Toplam karar 68.)
 type: status
 ---
 
 # Timer — Proje Durumu
 
-> **Son güncelleme:** 2026-08-07 (Sprint-04 Aşama 1-4 tamamlandı — SDK reactions write permission-denied kök neden bulundu: `users/{uid}/rateLimit` subcollection rule eksikti + `getDeviceUid()` yerine `username.current` kullanılıyordu. Rule + kod fix deploy edildi, canlıda cross-user round-trip çalışıyor. TTL policy ⏳ Console'dan manuel enable gerekli.)
+> **Son güncelleme:** 2026-08-11 (S-0033 — Sprint-05 Faz 1.5 Leaderboard UX polish tamamlandı. 6 UX iyileştirmesi: (1) localStorage cache for myRooms, (2) yanıp sönen nokta active indicator, (3) minimalist invite code, (4) self-reaction UI + backend guard, (5) sessions subcollection + rolling week stats, (6) haftalık canlı süre leaderboard. Toplam 68 karar (D-063..D-068 eklendi), 7 commit Faz 1.5 boyunca.)
 > 📚 **Detay:** [[00-Home]] · [[HUB]] · [[IDEAS]] · [[DECISIONS]] · [[daily/README]] · [[README]] · [[RESUME]]
 
 ---
@@ -38,6 +38,9 @@ type: status
 | **Sprint-03 Faz 3: Mesaj sistemi** | 🟡 **UI tamam, SDK debug gerek** — REST 200, SDK 404 (Sprint-04) |
 | **Sprint-04: Debug + Polish** | 🟢 **Debugging Pass tamamlandı** — v10 (b69bd93) + v11 (rule + cleanup + docs). TTL policy ⏳, Cloud Functions ⏳ |
 | **Sprint-04 Debugging Pass** | ✅ **TAMAM (S-0030)** — 6 bulgu #1-#6 ele alındı, v10 push'lendi, v11 yerel |
+| **Sprint-05 Faz 1: Single-room refactor** | ✅ **TAMAM (S-0032)** — D-059/060/061/062, /leaderboard full rewrite + leaveRoom + joinedRooms delete + room routes silindi |
+| **Sprint-05 Faz 1.5: Leaderboard UX polish** | ✅ **TAMAM (S-0033)** — D-063/064/065/066/067/068 |
+| **Sprint-05 Faz 2: Polish + Home stats** | ⏳ **Planlama** — home stats fix (D-018 reactive), firestore rules tightening (D-049), sessions rule deploy |
 
 ---
 
@@ -103,7 +106,7 @@ type: status
 |------|------------|----------|
 | Konsept | 1/1 | 0 |
 | Altyapı (vault/klasör) | 3/3 | 0 |
-| Kararlar | **55/55** | 0 |
+| Kararlar | **68/68** | 0 |
 | Tasarım | 1/1 | 0 |
 | Araştırma | 3/3 | 0 |
 | Kod (Sprint-01) | 7/7 | 0 |
@@ -113,9 +116,11 @@ type: status
 | Kod (Sprint-03 Faz 3) | 8/8 | 0 |
 | Kod (Sprint-04 Debug) | 2/2 | 0 |
 | Kod (Sprint-04 Debugging Pass — v11) | 4/4 | 0 |
-| **Toplam** | **77/78** | **1/78** |
+| Kod (Sprint-05 Faz 1 — single-room refactor) | 6/6 | 0 |
+| Kod (Sprint-05 Faz 1.5 — leaderboard UX polish) | 6/6 | 0 |
+| **Toplam** | **83/84** | **1/84** |
 
-**Not:** Bekleyen 7 madde Sprint-04 kalan (TTL + Cloud Functions) + Sprint-05 adayı.
+**Not:** Bekleyen 1 madde Sprint-05 Faz 2'de (Cloud Functions — server-side rate limit + recursive delete + owner check). TTL policy + home stats fix ayrıca Faz 2 backlog'unda.
 
 ---
 
