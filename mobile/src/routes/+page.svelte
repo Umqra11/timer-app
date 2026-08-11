@@ -11,7 +11,7 @@
 	import { timer } from '$lib/stores/timer.svelte';
 	import { formatHMS } from '$lib/utils/format';
 	import { playClick } from '$lib/utils/click';
-	import { onMount, onDestroy } from 'svelte';
+	import { onDestroy } from 'svelte';
 	import { isFirebaseEnabled } from '$lib/firebase/client';
 	import { rooms } from '$lib/stores/rooms.svelte';
 
@@ -63,7 +63,7 @@
 		showCelebration = false;
 	}
 
-	onMount(() => {
+	$effect(() => {
 		if (!isFirebaseEnabled()) return;
 		const hero = rooms.hero;
 		const uname = username.current;
