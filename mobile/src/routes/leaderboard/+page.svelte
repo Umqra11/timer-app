@@ -284,6 +284,8 @@
 		if (res.ok) closeReactionModal();
 		else if (res.reason === 'rate-limit')
 			reactionError = 'Çok sık tepki gönderiyorsun. Biraz yavaşla.';
+		else if (res.reason === 'self-target')
+			reactionError = 'Kendine tepki gönderemezsin.';
 		else reactionError = 'Gönderilemedi: ' + res.reason;
 	}
 
@@ -468,16 +470,6 @@
 				</svg>
 			</button>
 		</div>
-
-		<!-- Kendine tepki yaz -->
-		<button
-			type="button"
-			onclick={() => openReactionModal(getDeviceUid())}
-			disabled={!username.current}
-			class="w-full rounded-2xl border border-border bg-surface px-5 py-3 text-sm text-fg-muted"
-		>
-			💬 Tepki yaz (kendine)
-		</button>
 
 		<!-- Leaderboard -->
 		<section class="space-y-3">

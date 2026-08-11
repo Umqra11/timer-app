@@ -53,7 +53,7 @@ export type ReactionDoc = {
 
 export type ReactionResult =
 	| { ok: true; reactionId: string }
-	| { ok: false; reason: 'empty' | 'too-long' | 'rate-limit' | 'no-target' | 'unavailable' };
+	| { ok: false; reason: 'empty' | 'too-long' | 'rate-limit' | 'no-target' | 'self-target' | 'unavailable' };
 
 /** Rate limit counter doc snapshot'ı. */
 type RateLimitState = {
@@ -129,7 +129,10 @@ export async function sendReaction(
 	if (trimmed.length === 0) return { ok: false, reason: 'empty' };
 	if (trimmed.length > REACTION_MAX_LEN) return { ok: false, reason: 'too-long' };
 
-	const uid = getDeviceUid();
+	const senderUid = getDeviceUid();
+	if (targetUid === senderUid) return { ok: false, reason: 'self-target' };
+
+	const uid = senderUid;
 	const reactionId = crypto.randomUUID();
 	// expireAt — client-side hesaplanmış "now + 4 saat".
 	// NOT: Firestore TTL server clock kullanır, client clock ile ~1 sn sapma
