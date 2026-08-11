@@ -16,6 +16,7 @@
  */
 
 import {
+	Timestamp,
 	collection,
 	doc,
 	onSnapshot,
@@ -78,7 +79,7 @@ export function subscribeUserWeeklySeconds(
 		cb(0);
 		return () => {};
 	}
-	const cutoff = Date.now() - WEEK_MS;
+	const cutoff = Timestamp.fromMillis(Date.now() - WEEK_MS);
 	return onSnapshot(
 		query(collection(db, `users/${uid}/sessions`), where('endedAt', '>=', cutoff)),
 		(snap) => {

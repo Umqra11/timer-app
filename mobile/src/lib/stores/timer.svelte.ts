@@ -173,8 +173,7 @@ function createTimerStore() {
 		},
 		finish() {
 			const finalMs = elapsedMs;
-			const startedAt =
-				lastTickAt !== null ? Date.now() - Math.floor(elapsedMs) : Date.now() - Math.floor(elapsedMs);
+			const startedAt = Date.now() - Math.floor(elapsedMs);
 			clearTick();
 			lastTickAt = null;
 			if (roomCtx) {
