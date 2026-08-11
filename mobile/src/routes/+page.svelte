@@ -11,6 +11,9 @@
 	import { timer } from '$lib/stores/timer.svelte';
 	import { formatHMS } from '$lib/utils/format';
 	import { playClick } from '$lib/utils/click';
+	import { onMount, onDestroy } from 'svelte';
+	import { isFirebaseEnabled } from '$lib/firebase/client';
+	import { rooms } from '$lib/stores/rooms.svelte';
 
 	// Sayaç her zaman beyaz (D-041)
 	const display = $derived(formatHMS(timer.displaySeconds));
@@ -59,6 +62,19 @@
 	function handleCelebrationClose() {
 		showCelebration = false;
 	}
+
+	onMount(() => {
+		if (!isFirebaseEnabled()) return;
+		const hero = rooms.hero;
+		const uname = username.current;
+		if (hero && uname) {
+			timer.setRoomContext({ roomId: hero.id, username: uname });
+		}
+	});
+
+	onDestroy(() => {
+		timer.setRoomContext(null);
+	});
 </script>
 
 <div class="flex min-h-[80dvh] flex-col">
