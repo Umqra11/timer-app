@@ -15,6 +15,13 @@
 	import { isFirebaseEnabled } from '$lib/firebase/client';
 	import { rooms } from '$lib/stores/rooms.svelte';
 
+	// Fix 5: lastRoomId guard — Firestore snapshot re-fires create new `rooms.hero`
+	// object refs, causing $effect to re-run and call setRoomContext which would
+	// overwrite a 'running' state with 'idle'. Guard skips setRoomContext when
+	// hero.id matches the room we already initialized for. Module-level so the
+	// binding persists across $effect re-fires.
+	let lastRoomId: string | null = null;
+
 	// Sayaç her zaman beyaz (D-041)
 	const display = $derived(formatHMS(timer.displaySeconds));
 	const isRunning = $derived(timer.isRunning);
@@ -75,11 +82,14 @@
 		const hero = rooms.hero;
 		const uname = username.current;
 		const fb = isFirebaseEnabled();
-		console.log('[KronoDebug] $effect fired, hero=', hero, 'uname=', uname, 'fbEnabled=', fb);
+		console.log('[KronoDebug] $effect fired, hero=', hero, 'uname=', uname, 'fbEnabled=', fb, 'lastRoomId=', lastRoomId);
 		if (!fb) return;
-		if (hero && uname) {
+		if (hero && uname && hero.id !== lastRoomId) {
+			lastRoomId = hero.id;
 			console.log('[KronoDebug] setRoomContext calling with', { roomId: hero.id, username: uname });
 			timer.setRoomContext({ roomId: hero.id, username: uname });
+		} else {
+			console.log('[KronoDebug] $effect SKIPPED — same room or missing data');
 		}
 	});
 
