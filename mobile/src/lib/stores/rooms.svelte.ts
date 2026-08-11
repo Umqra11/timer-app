@@ -20,6 +20,29 @@
 import { isFirebaseEnabled } from '$lib/firebase/client';
 import * as fb from '$lib/firebase/rooms';
 
+export const MY_ROOMS_CACHE_KEY = 'timer_my_rooms_v1';
+
+export function loadCachedMyRooms(): fb.RoomMeta[] {
+	if (typeof localStorage === 'undefined') return [];
+	const raw = localStorage.getItem(MY_ROOMS_CACHE_KEY);
+	if (!raw) return [];
+	try {
+		const parsed = JSON.parse(raw) as fb.RoomMeta[];
+		return Array.isArray(parsed) ? parsed : [];
+	} catch {
+		return [];
+	}
+}
+
+export function saveCachedMyRooms(items: fb.RoomMeta[]): void {
+	if (typeof localStorage === 'undefined') return;
+	try {
+		localStorage.setItem(MY_ROOMS_CACHE_KEY, JSON.stringify(items));
+	} catch {
+		// quota exceeded / private mode — sessizce geç
+	}
+}
+
 export type Room = {
 	id: string;
 	name: string;
@@ -180,6 +203,7 @@ function createRoomsStore() {
 			unsubscribe = fb.subscribeMyRooms((remote) => {
 				myRoomsCache = remote;
 				list = mergeFromFirestore(remote);
+				saveCachedMyRooms(remote);
 			});
 		},
 		dispose(): void {
@@ -207,6 +231,7 @@ function createRoomsStore() {
 				(remote) => {
 					myRoomsCache = remote;
 					list = mergeFromFirestore(remote);
+					saveCachedMyRooms(remote);
 					cb(remote);
 				},
 				onError

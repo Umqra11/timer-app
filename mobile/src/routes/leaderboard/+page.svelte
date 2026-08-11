@@ -7,7 +7,7 @@
 -->
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { rooms } from '$lib/stores/rooms.svelte';
+	import { rooms, loadCachedMyRooms } from '$lib/stores/rooms.svelte';
 	import { username } from '$lib/stores/username.svelte';
 	import { timer } from '$lib/stores/timer.svelte';
 	import { isFirebaseEnabled } from '$lib/firebase/client';
@@ -69,12 +69,17 @@
 	);
 
 	onMount(() => {
+		// 1. Cache'ten anında hydrate — empty state flash'ını önler
+		const cached = loadCachedMyRooms();
+		if (cached.length > 0) {
+			myRooms = cached;
+			checkingRooms = false;
+		}
 		if (!isFirebaseEnabled()) {
 			checkingRooms = false;
 			return;
 		}
-		// Store üzerinden subscribe — D-059 pre-check cache'i (myRoomsCache)
-		// güncel kalsın. fb.subscribeMyRooms doğrudan çağrılırsa cache atlanır.
+		// 2. Firestore'dan fresh snapshot — cache'i günceller
 		unsubscribeMyRooms = rooms.subscribeMyRooms((rs) => {
 			myRooms = rs;
 			checkingRooms = false;
