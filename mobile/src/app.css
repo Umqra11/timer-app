@@ -68,3 +68,20 @@ body {
 .safe-top {
 	padding-top: env(safe-area-inset-top);
 }
+
+/* ============================================================
+   Animations
+   ============================================================ */
+@keyframes pulse-running {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.3;
+	}
+}
+
+.pulse-running {
+	animation: pulse-running 1.5s ease-in-out infinite;
+}

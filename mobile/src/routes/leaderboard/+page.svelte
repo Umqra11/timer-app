@@ -489,13 +489,8 @@
 									<div class="flex items-center gap-2">
 										{#if m.effective === 'running'}
 											<span
-												class="inline-block h-2 w-2 rounded-full bg-running"
-												aria-hidden="true"
-											></span>
-										{:else if m.effective === 'paused'}
-											<span
-												class="inline-block h-2 w-2 rounded-full bg-amber-400"
-												aria-hidden="true"
+												class="inline-block h-2 w-2 shrink-0 rounded-full bg-running pulse-running"
+												aria-label="şu an çalışıyor"
 											></span>
 										{/if}
 										<span class="truncate font-medium text-fg">{m.username}</span>
