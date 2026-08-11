@@ -433,28 +433,40 @@
 			<p class="text-sm text-fg-muted">{room.memberCount} kişi bu odada</p>
 		</header>
 
-		<!-- Davet kodu kartı -->
-		<div class="rounded-2xl border border-border bg-surface p-4">
-			<p class="text-xs font-medium uppercase tracking-wider text-fg-subtle">Davet kodu</p>
-			{#snippet copyButton(code: string)}
-				<button
-					type="button"
-					onclick={async () => {
-						try {
-							await navigator.clipboard.writeText(code);
-						} catch {
-							alert('Kopyalanamadı — kodu elle seçip kopyalayabilirsin.');
-						}
-					}}
-					class="rounded-full bg-accent px-3 py-1.5 text-xs font-semibold text-bg active:bg-accent-hover"
-				>
-					Kopyala
-				</button>
-			{/snippet}
-			<div class="mt-2 flex items-center justify-between rounded-xl bg-bg/60 px-4 py-3">
-				<div class="font-mono text-xl tracking-[0.2em] text-fg">{room.inviteCode}</div>
-				{@render copyButton(room.inviteCode)}
+		<!-- Davet kodu — minimalist tek satır -->
+		<div class="flex items-center justify-between gap-3">
+			<div class="min-w-0 flex-1 truncate">
+				<div class="text-[10px] font-medium uppercase tracking-wider text-fg-subtle">Davet kodu</div>
+				<div class="font-mono text-base tracking-[0.15em] text-fg">{room.inviteCode}</div>
 			</div>
+			<button
+				type="button"
+				onclick={async () => {
+					try {
+						await navigator.clipboard.writeText(room.inviteCode);
+					} catch {
+						alert('Kopyalanamadı — kodu elle seçip kopyalayabilirsin.');
+					}
+				}}
+				class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent-soft text-accent active:bg-accent"
+				aria-label="Davet kodunu kopyala"
+			>
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					width="16"
+					height="16"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					aria-hidden="true"
+				>
+					<rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+					<path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+				</svg>
+			</button>
 		</div>
 
 		<!-- Kendine tepki yaz -->
