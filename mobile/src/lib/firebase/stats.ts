@@ -5,7 +5,8 @@
  *   - streak: number            — ardışık gün sayısı
  *   - lastDayWorked: string     — "YYYY-MM-DD" (takvim günü, Europe/Istanbul)
  *   - totalSeconds: number      — tüm zamanlar toplamı
- *   - weekSeconds: number       — bugün (henüz rolling-week sum yok, MVP)
+ *   - weekSeconds: number       — DEPRECATED: artık sessions subcollection'dan hesaplanır (subscribeUserWeeklySeconds)
+ *                                  MVP uyumluluğu için alan kaldı, artık güncellenmiyor.
  *
  * Streak mantığı (günde bir kez `touchStreak(addedSeconds)` çağrılır):
  *   - lastDayWorked yoksa: streak=1, lastDayWorked=today
@@ -25,7 +26,7 @@ export type Stats = {
 	streak: number;
 	lastDayWorked: string | null; // "YYYY-MM-DD"
 	totalSeconds: number;
-	weekSeconds: number; // bugünün toplamı; profile'da "bugün" olarak gösterilir
+	weekSeconds: number; // deprecated; rolling 7-day total comes from sessions subcollection
 };
 
 const TZ = 'Europe/Istanbul';
@@ -44,6 +45,8 @@ function dayKey(date: Date): string {
 function todayKey(): string {
 	return dayKey(new Date());
 }
+
+export const todayKeyForSession = todayKey;
 
 function yesterdayKey(): string {
 	const d = new Date();
@@ -106,7 +109,7 @@ export async function touchStreak(addedSeconds: number): Promise<Stats> {
 		streak,
 		lastDayWorked: today,
 		totalSeconds: (current.totalSeconds ?? 0) + addedSeconds,
-		weekSeconds: last === today ? (current.weekSeconds ?? 0) + addedSeconds : addedSeconds
+		weekSeconds: current.weekSeconds ?? 0
 	};
 
 	await setDoc(
@@ -115,7 +118,6 @@ export async function touchStreak(addedSeconds: number): Promise<Stats> {
 			streak: next.streak,
 			lastDayWorked: next.lastDayWorked,
 			totalSeconds: next.totalSeconds,
-			weekSeconds: next.weekSeconds,
 			lastActiveAt: serverTimestamp()
 		},
 		{ merge: true }

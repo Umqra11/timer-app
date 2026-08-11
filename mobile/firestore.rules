@@ -52,6 +52,14 @@ service cloud.firestore {
 					&& request.resource.data.hourCount >= 0;
 				allow delete: if false;
 			}
+
+			match /sessions/{sessionId} {
+				allow create: if request.auth == null  // MVP: cihaz-uid auth-free
+					&& request.resource.data.uid == uid
+					&& request.resource.data.keys().hasAll(['uid', 'dayKey', 'startedAt', 'endedAt', 'elapsedMs']);
+				allow read: if request.auth == null;  // kendi okusun (leaderboard kendi üyeleri için)
+				allow update, delete: if false;
+			}
 		}
 
 		// rooms/{roomId}: herkese açık okunur.

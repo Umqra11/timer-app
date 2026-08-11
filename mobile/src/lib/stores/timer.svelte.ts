@@ -11,6 +11,7 @@
 
 import { isFirebaseEnabled } from '$lib/firebase/client';
 import * as presence from '$lib/firebase/presence';
+import * as sessions from '$lib/firebase/sessions';
 import * as stats from '$lib/firebase/stats';
 import { timerBroadcast } from '$lib/utils/broadcast.svelte';
 
@@ -172,6 +173,8 @@ function createTimerStore() {
 		},
 		finish() {
 			const finalMs = elapsedMs;
+			const startedAt =
+				lastTickAt !== null ? Date.now() - Math.floor(elapsedMs) : Date.now() - Math.floor(elapsedMs);
 			clearTick();
 			lastTickAt = null;
 			if (roomCtx) {
@@ -180,6 +183,13 @@ function createTimerStore() {
 			const addedSeconds = Math.max(0, Math.floor(finalMs / 1000));
 			if (addedSeconds > 0) {
 				void stats.touchStreak(addedSeconds);
+				// D-067: weekly sessions log
+				void sessions.recordSession({
+					dayKey: stats.todayKeyForSession(),
+					startedAt,
+					endedAt: Date.now(),
+					elapsedMs: finalMs
+				});
 			}
 			elapsedMs = 0;
 			status = 'idle';
