@@ -91,4 +91,12 @@ Detay: [[docs/concept]] · [[docs/research-competitors|Rakip analizi]] · [[DECI
 
 ---
 
+---
+
+## 🔍 Backlog
+
+> Gözden geçirilecek bug/iyileştirme/gözlem noktaları için → [[BACKLOG]]
+
+---
+
 **Son güncelleme:** 2026-08-04

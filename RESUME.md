@@ -10,7 +10,7 @@ type: session-resume
 > **Bu dosya yeni bir session'da işe başlarken İLK okunacak dosyadır.**
 > Tüm kararları, durumu, sıradaki adımları tek bakışta özetler.
 
-> 📚 **Detay:** [[STATUS]] · [[DECISIONS]] · [[HUB]] · [[00-Home]] · [[IDEAS]]
+> 📚 **Detay:** [[STATUS]] · [[DECISIONS]] · [[HUB]] · [[00-Home]] · [[IDEAS]] · [[BACKLOG]]
 
 ---
 
@@ -21,7 +21,7 @@ type: session-resume
 **Patron:** Enes
 **Canlı:** https://timerviber.web.app (otomatik deploy, `Umqra11/timer-app` GitHub repo, ~28 commit — son push `1aa1413` Sprint-05 Faz 1.5 sonunda)
 
-> ⚠️ **BACKLOG AKTİF (2026-08-11)** → `[[IDEAS#🔍 Backlog — 2026-08-11 (Gözden Geçirilecek)|IDEAS.md › Backlog]]` bölümünde işlenmemiş noktalar var. Önce onları gözden geçir.
+> ⚠️ **BACKLOG AKTİF (2026-08-11)** → `[[BACKLOG]]` dosyasında işlenmemiş 3 nokta var. Önce onları gözden geçir.
 
 ### ✅ Sprint-03 — Tamamlanan (S-0024..S-0028)
 
@@ -246,7 +246,7 @@ e62938a feat(sprint-02): Firebase integration, Firestore stores, stats, click so
 1. `RESUME.md` oku (bu dosya)
 2. `STATUS.md` kontrol et
 3. `DECISIONS.md` gözden geçir (68 karar — D-001'den D-068'e; D-063-068 Sprint-05 Faz 1.5)
-4. **`IDEAS.md` › 🔍 Backlog bölümünü kontrol et** — patronun eklediği işlenmemiş bug/iyileştirme noktaları olabilir
+4. **`BACKLOG.md` dosyasını kontrol et** — patronun eklediği işlenmemiş bug/iyileştirme noktaları olabilir
 5. Canlı test: https://timerviber.web.app/ → **Liderlik** sekmesi (D-061 ile /rooms route silindi — direkt /leaderboard üzerinden odaya erişim)
 6. Patronsal kalan: TTL policy + sessions rule deploy (Firebase Console manuel işlem)
 
