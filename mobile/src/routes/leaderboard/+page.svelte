@@ -16,6 +16,17 @@
 	import * as reactions from '$lib/firebase/reactions';
 	import { playClick } from '$lib/utils/click';
 	import { formatHumanDuration } from '$lib/utils/format';
+	import { liveSeconds } from '$lib/utils/live-timer';
+
+	// 1 saniyelik tick — leaderboard'daki canlı süreler için
+	let nowMs = $state(Date.now());
+
+	$effect(() => {
+		const handle = setInterval(() => {
+			nowMs = Date.now();
+		}, 1000);
+		return () => clearInterval(handle);
+	});
 
 	// === Oda keşfi ===
 	let myRooms = $state<fb.RoomMeta[]>([]);
@@ -168,10 +179,6 @@
 			default:
 				return '';
 		}
-	}
-
-	function totalText(seconds: number): string {
-		return formatHumanDuration(seconds);
 	}
 
 	function ago(ts: number): string {
@@ -506,10 +513,10 @@
 								<div class="flex items-center gap-3">
 									<div class="text-right">
 										<div class="font-mono text-sm tabular-nums text-fg">
-											{totalText(m.totalSeconds)}
+											{formatHumanDuration(Math.floor(liveSeconds(m, nowMs)))}
 										</div>
 										<div class="text-[10px] uppercase tracking-wider text-fg-subtle">
-											toplam
+											{m.effective === 'running' ? 'şu an' : 'bu hafta'}
 										</div>
 									</div>
 									<button

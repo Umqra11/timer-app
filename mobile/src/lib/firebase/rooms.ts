@@ -36,6 +36,7 @@ import {
 } from 'firebase/firestore';
 import { getDb } from './client';
 import { getDeviceUid } from './uid';
+import { subscribeUserWeeklySeconds } from './sessions';
 
 const ROOMS = 'rooms';
 const JOINED = 'joinedRooms';
@@ -373,6 +374,7 @@ export type LeaderboardEntry = {
 	effective: EffectiveStatus;
 	elapsedMs: number;
 	lastSeen: number;
+	weeklySeconds: number; // D-068: son 7 gün session toplamı (subscribeUserWeeklySeconds)
 };
 
 /** Client tarafında staleness çözümlemesi (D-050 + D-051). */
@@ -403,11 +405,28 @@ export function subscribeRoomMembers(
 		cb([]);
 		return () => {};
 	}
-	return onSnapshot(
+	// weeklySeconds cache: uid → seconds
+	const weeklyCache = new Map<string, number>();
+	let presenceEntries: (Omit<LeaderboardEntry, 'weeklySeconds'>)[] = [];
+	const weeklyUnsubs: (() => void)[] = [];
+
+	function emit() {
+		const merged: LeaderboardEntry[] = presenceEntries.map((e) => ({
+			...e,
+			weeklySeconds: weeklyCache.get(e.uid) ?? 0
+		}));
+		merged.sort((a, b) => {
+			if (b.weeklySeconds !== a.weeklySeconds) return b.weeklySeconds - a.weeklySeconds;
+			return a.username.localeCompare(b.username);
+		});
+		cb(merged);
+	}
+
+	const unsubPresence = onSnapshot(
 		collection(db, `rooms/${roomId}/presence`),
 		async (snap) => {
 			const now = Date.now();
-			const raw: LeaderboardEntry[] = [];
+			const next: typeof presenceEntries = [];
 			for (const d of snap.docs) {
 				const data = d.data() as {
 					uid: string;
@@ -425,7 +444,7 @@ export function subscribeRoomMembers(
 				const totalSeconds = userSnap.exists()
 					? (userSnap.data() as { totalSeconds?: number }).totalSeconds ?? 0
 					: 0;
-				raw.push({
+				next.push({
 					uid: data.uid,
 					username,
 					totalSeconds,
@@ -434,16 +453,28 @@ export function subscribeRoomMembers(
 					elapsedMs: data.elapsedMs,
 					lastSeen
 				});
+				// weekly subscribe — yeni uid ise
+				if (!weeklyCache.has(data.uid)) {
+					weeklyUnsubs.push(
+						subscribeUserWeeklySeconds(data.uid, (secs) => {
+							weeklyCache.set(data.uid, secs);
+							emit();
+						})
+					);
+				}
 			}
-			raw.sort((a, b) => {
-				if (b.totalSeconds !== a.totalSeconds) return b.totalSeconds - a.totalSeconds;
-				return a.username.localeCompare(b.username);
-			});
-			cb(raw);
+			presenceEntries = next;
+			emit();
 		},
 		(err) => {
 			console.error('[rooms] subscribeRoomMembers error', err);
 			cb([]);
 		}
 	);
+
+	return () => {
+		unsubPresence();
+		weeklyUnsubs.forEach((u) => u());
+		weeklyUnsubs.length = 0;
+	};
 }
