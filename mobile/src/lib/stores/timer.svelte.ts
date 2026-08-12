@@ -49,7 +49,8 @@ function createTimerStore() {
 			const ps: presence.PresenceStatus =
 				status === 'running' ? 'running' : status === 'paused' ? 'paused' : 'idle';
 			const uid = getDeviceUid();
-			const fn = httpsCallable('onPresenceChange');
+			console.info('[presence] invoke', { roomId: roomCtx.roomId, status: ps, elapsedMs });
+		const fn = httpsCallable('onPresenceChange');
 			void fn({ roomId: roomCtx.roomId, status: ps, elapsedMs, uid }).catch((err: unknown) => {
 				console.error('[presence] callable failed', err);
 			});
