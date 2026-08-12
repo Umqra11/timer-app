@@ -1,6 +1,8 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 
+if (getApps().length === 0) initializeApp();
 const db = getFirestore();
 
 const RATE_PER_MINUTE = 5;
