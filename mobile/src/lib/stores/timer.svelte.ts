@@ -130,7 +130,12 @@ function createTimerStore() {
 			}
 
 			// Kendi presence'ımızı yaz — leaderboard'da görünelim
-			void presence.writePresence(ctx.roomId, ctx.username, 'idle', 0);
+			// M0-fix #2: client-side writePresence kaldırıldı.
+		// Sebep: server-side write 'running' merge'i, client-side 'idle' overwrite
+		// ile her /+page.svelte → /leaderboard → /+page.svelte döngüsünde eziliyordu.
+		// Initial 'idle' yazımı artık sadece ilk 'start'/'pause'/'resume'/'finish'
+		// state transition'ında pushToRemote() ile server-side tetiklenir.
+		// Lobby'de 'Enes' görünmesi ancak 'Başla' tıklaması sonrası olur (kabul edilebilir MVP).
 
 			// D-050 — page lifecycle listener'ları
 			if (typeof window === 'undefined') return;
