@@ -55,4 +55,13 @@ export function isFirebaseEnabled(): boolean {
 	return getDb() !== null;
 }
 
+/** Returns the Functions instance, or null if config is missing. */
+export function getFns(): Functions | null {
+	if (typeof window === 'undefined') return null;
+	if (!cached) {
+		getDb();
+	}
+	return cached?.fns ?? null;
+}
+
 export { getApp, httpsCallable };

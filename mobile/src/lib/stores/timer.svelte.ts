@@ -9,7 +9,7 @@
  * D-050 — visibilitychange + beforeunload listener.
  */
 
-import { isFirebaseEnabled, httpsCallable } from '$lib/firebase/client';
+import { isFirebaseEnabled, httpsCallable, getFns } from '$lib/firebase/client';
 import * as presence from '$lib/firebase/presence';
 import * as sessions from '$lib/firebase/sessions';
 import * as stats from '$lib/firebase/stats';
@@ -50,7 +50,7 @@ function createTimerStore() {
 				status === 'running' ? 'running' : status === 'paused' ? 'paused' : 'idle';
 			const uid = getDeviceUid();
 			console.info('[presence] invoke', { roomId: roomCtx.roomId, status: ps, elapsedMs });
-		const fn = httpsCallable('onPresenceChange');
+		const fn = httpsCallable(getFns(), 'onPresenceChange');
 			void fn({ roomId: roomCtx.roomId, status: ps, elapsedMs, uid }).catch((err: unknown) => {
 				console.error('[presence] callable failed', err);
 			});
