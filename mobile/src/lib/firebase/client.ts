@@ -8,10 +8,11 @@
  * SSR sırasında window yok; bu yüzden init guard'lı.
  */
 
-import { initializeApp, type FirebaseApp } from 'firebase/app';
+import { initializeApp, getApp, type FirebaseApp } from 'firebase/app';
 import { getFirestore, type Firestore } from 'firebase/firestore';
+import { getFunctions, httpsCallable, type Functions } from 'firebase/functions';
 
-type FirebaseHandles = { app: FirebaseApp; db: Firestore };
+type FirebaseHandles = { app: FirebaseApp; db: Firestore; fns: Functions };
 
 let cached: FirebaseHandles | null = null;
 let initTried = false;
@@ -45,7 +46,7 @@ export function getDb(): Firestore | null {
 		return null;
 	}
 	const app = initializeApp(config);
-	cached = { app, db: getFirestore(app) };
+	cached = { app, db: getFirestore(app), fns: getFunctions(app) };
 	return cached.db;
 }
 
@@ -53,3 +54,5 @@ export function getDb(): Firestore | null {
 export function isFirebaseEnabled(): boolean {
 	return getDb() !== null;
 }
+
+export { getApp, httpsCallable };

@@ -9,10 +9,11 @@
  * D-050 — visibilitychange + beforeunload listener.
  */
 
-import { isFirebaseEnabled } from '$lib/firebase/client';
+import { isFirebaseEnabled, httpsCallable } from '$lib/firebase/client';
 import * as presence from '$lib/firebase/presence';
 import * as sessions from '$lib/firebase/sessions';
 import * as stats from '$lib/firebase/stats';
+import { getDeviceUid } from '$lib/firebase/uid';
 import { timerBroadcast } from '$lib/utils/broadcast.svelte';
 
 export type TimerStatus = 'idle' | 'running' | 'paused';
@@ -47,7 +48,11 @@ function createTimerStore() {
 		if (roomCtx) {
 			const ps: presence.PresenceStatus =
 				status === 'running' ? 'running' : status === 'paused' ? 'paused' : 'idle';
-			void presence.writePresence(roomCtx.roomId, roomCtx.username, ps, elapsedMs);
+			const uid = getDeviceUid();
+			const fn = httpsCallable('onPresenceChange');
+			void fn({ roomId: roomCtx.roomId, status: ps, elapsedMs, uid }).catch((err: unknown) => {
+				console.error('[presence] callable failed', err);
+			});
 		}
 	}
 
