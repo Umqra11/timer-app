@@ -141,12 +141,12 @@ function createTimerStore() {
 			if (typeof window === 'undefined') return;
 			const onVisibility = () => {
 				if (document.visibilityState === 'hidden' && roomCtx) {
-					void presence.writePresence(roomCtx.roomId, roomCtx.username, 'idle', 0);
+					pushToRemote();
 				}
 			};
 			const onBeforeUnload = () => {
 				if (roomCtx) {
-					void presence.writePresence(roomCtx.roomId, roomCtx.username, 'idle', 0);
+					pushToRemote();
 				}
 			};
 			document.addEventListener('visibilitychange', onVisibility);
