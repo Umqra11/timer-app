@@ -43,15 +43,11 @@ function createTimerStore() {
 	}
 
 	function pushToRemote() {
-		console.log('[KronoDebug] pushToRemote called, roomCtx=', roomCtx, 'status=', status, 'elapsedMs=', elapsedMs);
 		timerBroadcast.send({ type: 'tick', elapsedMs, status });
 		if (roomCtx) {
 			const ps: presence.PresenceStatus =
 				status === 'running' ? 'running' : status === 'paused' ? 'paused' : 'idle';
-			console.log('[KronoDebug] pushToRemote writing presence, status=', ps);
 			void presence.writePresence(roomCtx.roomId, roomCtx.username, ps, elapsedMs);
-		} else {
-			console.log('[KronoDebug] pushToRemote SKIPPED — roomCtx is null');
 		}
 	}
 
@@ -108,7 +104,6 @@ function createTimerStore() {
 		 * yazılmıyordu. Şimdi callback opsiyonel.
 		 */
 		setRoomContext(ctx: RoomContext, onRemote?: (p: presence.PresenceDoc[]) => void) {
-			console.log('[KronoDebug] setRoomContext called, ctx=', ctx);
 			roomCtx = ctx;
 
 			// Önceki subscription'ı temizle
@@ -129,7 +124,6 @@ function createTimerStore() {
 			}
 
 			// Kendi presence'ımızı yaz — leaderboard'da görünelim
-			console.log('[KronoDebug] setRoomContext writing initial presence (idle)');
 			void presence.writePresence(ctx.roomId, ctx.username, 'idle', 0);
 
 			// D-050 — page lifecycle listener'ları

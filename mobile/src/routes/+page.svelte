@@ -50,9 +50,7 @@
 
 	function handleStart() {
 		playClick();
-		console.log('[KronoDebug] handleStart called');
 		timer.start();
-		console.log('[KronoDebug] handleStart returned, status=', timer.status);
 	}
 
 	/** Durdur / Sıfırla — önce süreyi snapshot al, sonra finish() ile presence'a
@@ -73,28 +71,21 @@
 	}
 
 	onMount(() => {
-		console.log('[KronoDebug] onMount fired, hero=', rooms.hero, 'uname=', username.current, 'fbEnabled=', isFirebaseEnabled());
 		rooms.subscribe();
-		console.log('[KronoDebug] after rooms.subscribe(), hero=', rooms.hero);
 	});
 
 	$effect(() => {
 		const hero = rooms.hero;
 		const uname = username.current;
 		const fb = isFirebaseEnabled();
-		console.log('[KronoDebug] $effect fired, hero=', hero, 'uname=', uname, 'fbEnabled=', fb, 'lastRoomId=', lastRoomId);
 		if (!fb) return;
 		if (hero && uname && hero.id !== lastRoomId) {
 			lastRoomId = hero.id;
-			console.log('[KronoDebug] setRoomContext calling with', { roomId: hero.id, username: uname });
 			timer.setRoomContext({ roomId: hero.id, username: uname });
-		} else {
-			console.log('[KronoDebug] $effect SKIPPED — same room or missing data');
 		}
 	});
 
 	onDestroy(() => {
-		console.log('[KronoDebug] onDestroy fired');
 		timer.setRoomContext(null);
 		rooms.dispose();
 	});
