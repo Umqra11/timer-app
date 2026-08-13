@@ -223,11 +223,7 @@
 				Bu hafta toplam <span class="font-semibold text-fg">{formatHumanShort(weekSeconds)}</span>
 			</p>
 			<p class="mt-3 text-sm text-fg-subtle">
-				Bu hafta henüz rozet yok — ama her dakika sayılıyor!
-			</p>
-			<p class="mt-6 text-sm text-fg-muted">
-				Sonraki rozet <span class="font-semibold text-fg">İlk Adım</span> için
-				<span class="font-semibold text-accent">60dk</span> kaldı.
+				Her dakika sayılıyor.
 			</p>
 			<button
 				onclick={handleCelebrationClose}
