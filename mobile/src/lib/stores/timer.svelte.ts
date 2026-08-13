@@ -179,7 +179,10 @@ function createTimerStore() {
 			// D-050 — page lifecycle listener'ları
 			if (typeof window === 'undefined') return;
 			const onVisibility = () => {
-				if (document.visibilityState === 'hidden' && roomCtx) {
+				// P2 (Sprint-06 Faz 3): both 'hidden' (going away) and 'visible' (returning from
+				// background tab — e.g. YouTube → timer) trigger immediate sync so presence
+				// doesn't appear stale and timer owners see "online" immediately on return.
+				if (roomCtx && (document.visibilityState === 'hidden' || document.visibilityState === 'visible')) {
 					pushToRemote();
 				}
 			};
