@@ -40,9 +40,11 @@
 	let allReactions = $state<reactions.ReactionDoc[]>([]);
 
 	let unsubscribeMyRooms: (() => void) | null = null;
-	let unsubscribeRoom: (() => void) | null = null;
-	let unsubscribeMembers: (() => void) | null = null;
-	let unsubscribeReactions: (() => void) | null = null;
+	// M5 fix — Bug B weeklyUnsubs leak. Tek Set<Unsub> ile tüm subscribe
+	// return'ları toplanır; effect teardown + onDestroy forEach unsub.
+	// rooms.ts:subscribeRoomMembers içindeki inner uid leak'i ayrı takip
+	// edilebilir (M5 kapsamı dışı — farklı modül).
+	const unsubscribers = new Set<() => void>();
 	// C4 fix: touchRoom loop guard. Effect ilk kez bu oda için fire aldığında
 	// id'yi kaydet, sonraki snapshot'larda değişmediği sürece tekrar
 	// touchRoom çağırma.
@@ -119,15 +121,15 @@
 		members = [];
 		allReactions = [];
 
-		unsubscribeRoom = fb.subscribeRoom(rid, (r) => {
+		unsubscribers.add(fb.subscribeRoom(rid, (r) => {
 			room = r;
-		});
-		unsubscribeMembers = fb.subscribeRoomMembers(rid, (entries) => {
+		}));
+		unsubscribers.add(fb.subscribeRoomMembers(rid, (entries) => {
 			members = entries;
-		});
-		unsubscribeReactions = reactions.subscribeReactions(rid, (rs) => {
+		}));
+		unsubscribers.add(reactions.subscribeReactions(rid, (rs) => {
 			allReactions = rs;
-		});
+		}));
 
 		if (uname) {
 			timer.setRoomContext({ roomId: rid, username: uname });
@@ -139,12 +141,15 @@
 			// güvenli: effect re-run'da yeni context set edilir, unmount'ta
 			// null kalır (istenen davranış).
 			timer.setRoomContext(null);
-			if (unsubscribeRoom) unsubscribeRoom();
-			if (unsubscribeMembers) unsubscribeMembers();
-			if (unsubscribeReactions) unsubscribeReactions();
-			unsubscribeRoom = null;
-			unsubscribeMembers = null;
-			unsubscribeReactions = null;
+			// M5: Set<Unsub> drain — re-run'da yeni subscription'lar tekrar eklenir.
+			for (const unsub of unsubscribers) {
+				try {
+					unsub();
+				} catch (e) {
+					console.warn('[leaderboard] unsub threw', e);
+				}
+			}
+			unsubscribers.clear();
 		};
 	});
 
@@ -155,9 +160,14 @@
 		// temsil eder; onDestroy her zaman 'sayfa kapanıyor' demektir.
 		timer.setRoomContext(null);
 		if (unsubscribeMyRooms) unsubscribeMyRooms();
-		if (unsubscribeRoom) unsubscribeRoom();
-		if (unsubscribeMembers) unsubscribeMembers();
-		if (unsubscribeReactions) unsubscribeReactions();
+		for (const unsub of unsubscribers) {
+			try {
+				unsub();
+			} catch (e) {
+				console.warn('[leaderboard] unsub threw', e);
+			}
+		}
+		unsubscribers.clear();
 	});
 
 	function statusLabel(entry: fb.LeaderboardEntry): string {
