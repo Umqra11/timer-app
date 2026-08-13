@@ -17,7 +17,7 @@ import { getDeviceUid } from '$lib/firebase/uid';
 import { timerBroadcast } from '$lib/utils/broadcast.svelte';
 import { enqueuePending, installSettleFlush } from '$lib/utils/settle-queue';
 
-export type TimerStatus = 'idle' | 'running' | 'paused';
+export type TimerStatus = 'idle' | 'running' | 'paused' | 'finished';
 
 const TICK_MS = 100;
 
@@ -58,7 +58,9 @@ function createTimerStore() {
 				: 'idle';
 		const uid = getDeviceUid();
 		console.info('[presence] invoke', { roomId: roomCtx.roomId, status: ps, elapsedMs });
-		const fn = httpsCallable(getFns(), 'onPresenceChange');
+		const fns = getFns();
+		if (!fns) return; // offline / no firebase — presence write no-op
+		const fn = httpsCallable(fns, 'onPresenceChange');
 		try {
 			await fn({ roomId: roomCtx.roomId, status: ps, elapsedMs, uid });
 		} catch (err: unknown) {
@@ -145,7 +147,9 @@ function createTimerStore() {
 			// tetiklendiğinde kuyruktaki pending write'ları callable ile tekrar dener.
 			// başarılı olanlar kuyruktan çıkar, başarısızlar bir sonraki online'a kalır.
 			void installSettleFlush(async (w) => {
-				const fn = httpsCallable(getFns(), 'onPresenceChange');
+				const fns = getFns();
+				if (!fns) return false; // offline — bir sonraki online olayına sakla
+				const fn = httpsCallable(fns, 'onPresenceChange');
 				try {
 					await fn({ roomId: w.roomId, status: w.status, elapsedMs: w.elapsedMs, uid: w.uid });
 					return true;

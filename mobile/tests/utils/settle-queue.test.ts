@@ -38,7 +38,7 @@ describe('settle queue', () => {
 
 	it('peekPending: returns empty array on SSR (no window)', () => {
 		const originalWindow = globalThis.window;
-		// @ts-expect-error — SSR simulation
+		// SSR simulation — window optional at type level
 		delete (globalThis as { window?: unknown }).window;
 		expect(peekPending()).toHaveLength(0);
 		(globalThis as { window: unknown }).window = originalWindow;

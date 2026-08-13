@@ -67,7 +67,9 @@ export async function sendReaction(
 	if (targetUid === senderUid) return { ok: false, reason: 'self-target' };
 
 	try {
-		const fn = httpsCallable(getFns(), 'sendReaction');
+		const fns = getFns();
+		if (!fns) return { ok: false, reason: 'unavailable' };
+		const fn = httpsCallable(fns, 'sendReaction');
 		const result = await fn({
 			roomId,
 			targetUid,

@@ -462,6 +462,7 @@
 				type="button"
 				onclick={async () => {
 					try {
+						if (!room) return; // null guard (svelte-check strict)
 						await navigator.clipboard.writeText(room.inviteCode);
 					} catch {
 						alert('Kopyalanamadı — kodu elle seçip kopyalayabilirsin.');

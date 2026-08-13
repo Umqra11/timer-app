@@ -31,7 +31,7 @@ const SESSION_ID: string =
 
 export const sessionId = SESSION_ID;
 
-export type TimerStatus = 'idle' | 'running' | 'paused';
+export type TimerStatus = 'idle' | 'running' | 'paused' | 'finished';
 
 export type TimerBroadcastMessage = {
 	type: 'tick';
