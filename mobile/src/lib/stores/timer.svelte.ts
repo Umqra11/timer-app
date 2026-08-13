@@ -47,7 +47,13 @@ function createTimerStore() {
 		timerBroadcast.send({ type: 'tick', elapsedMs, status });
 		if (roomCtx) {
 			const ps: presence.PresenceStatus =
-				status === 'running' ? 'running' : status === 'paused' ? 'paused' : 'idle';
+					status === 'running'
+						? 'running'
+					: status === 'paused'
+						? 'paused'
+					: status === 'finished'
+						? 'finished'
+					: 'idle';
 			const uid = getDeviceUid();
 			console.info('[presence] invoke', { roomId: roomCtx.roomId, status: ps, elapsedMs });
 		const fn = httpsCallable(getFns(), 'onPresenceChange');
@@ -187,9 +193,14 @@ function createTimerStore() {
 			const startedAt = Date.now() - Math.floor(elapsedMs);
 			clearTick();
 			lastTickAt = null;
-			if (roomCtx) {
-				void presence.writePresence(roomCtx.roomId, roomCtx.username, 'finished', finalMs);
-			}
+
+			// M1 fix — Bug A: finish-race. Önceki davranış: client-side
+			// writePresence('finished') + hemen sonra elapsedMs=0, status='idle', pushToRemote().
+			// Race — server-side 'finished' merge'i 'idle' ile eziliyor, FINISHED_TIMEOUT_MS (5dk)
+			// hiç engage olmaz, leaderboard 'finished' badge göstermez. Yeni davranış:
+			// server-side 'finished' yaz, 250ms throttle sonra 'idle'. Throttle sırasında
+			// local UI BroadcastChannel ile 'finished' badge'i gösterir.
+
 			const addedSeconds = Math.max(0, Math.floor(finalMs / 1000));
 			if (addedSeconds > 0) {
 				void stats.touchStreak(addedSeconds);
@@ -201,9 +212,22 @@ function createTimerStore() {
 					elapsedMs: finalMs
 				});
 			}
-			elapsedMs = 0;
-			status = 'idle';
-			pushToRemote();
+
+			if (roomCtx) {
+				// 1) status='finished' set + pushToRemote (server-side 'finished' merge)
+				status = 'finished';
+				pushToRemote();
+				// 2) 250ms sonra elapsedMs=0, status='idle', pushToRemote (server-side 'idle')
+				setTimeout(() => {
+					elapsedMs = 0;
+					status = 'idle';
+					pushToRemote();
+				}, 250);
+			} else {
+				// Offline / no room — eski davranış (sadece local reset, throttle gereksiz)
+				elapsedMs = 0;
+				status = 'idle';
+			}
 		},
 		reset() {
 			clearTick();
