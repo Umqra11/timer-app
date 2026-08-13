@@ -40,7 +40,8 @@ export const onPresenceChange = onCall(async (request) => {
     elapsedMs: number;
   };
   // MVP auth-free: use request.data.uid (device-uid passed from client)
-  console.info('[presence] invoke', { roomId, status: status as string, elapsedMs });
+  // M6 cleanup: A2 debug telemetry comment-out (production gürültüsü)
+  // console.info('[presence] invoke', { roomId, status: status as string, elapsedMs });
   const uid = (request.data as { uid?: string }).uid;
   if (!uid) throw new HttpsError('unauthenticated', 'uid required');
   if (!roomId) throw new HttpsError('invalid-argument', 'roomId required');

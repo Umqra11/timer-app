@@ -57,7 +57,8 @@ function createTimerStore() {
 					? 'finished'
 				: 'idle';
 		const uid = getDeviceUid();
-		console.info('[presence] invoke', { roomId: roomCtx.roomId, status: ps, elapsedMs });
+		// M6 cleanup: A2 debug telemetry comment-out (production gürültüsü)
+		// console.info('[presence] invoke', { roomId: roomCtx.roomId, status: ps, elapsedMs });
 		const fns = getFns();
 		if (!fns) return; // offline / no firebase — presence write no-op
 		const fn = httpsCallable(fns, 'onPresenceChange');
