@@ -431,20 +431,27 @@ export function subscribeRoomMembers(
 		async (snap) => {
 			const now = Date.now();
 			const next: typeof presenceEntries = [];
-			for (const d of snap.docs) {
-				const data = d.data() as {
+			// F7 (D-074): N+1 waterfall → Promise.all — single round-trip for all
+			// users/{uid}.totalSeconds reads. Order preserved (Promise.all maintains
+			// index alignment).
+			const presenceData = snap.docs.map((d) => ({
+				d,
+				data: d.data() as {
 					uid: string;
 					username?: string;
 					status: PresenceStatus;
 					elapsedMs: number;
 					updatedAt?: { toMillis?: () => number };
-				};
+				}
+			}));
+			const userSnaps = await Promise.all(
+				presenceData.map(({ data }) => getDoc(doc(db, `users/${data.uid}`)))
+			);
+			for (let i = 0; i < presenceData.length; i++) {
+				const { data } = presenceData[i]!;
+				const userSnap = userSnaps[i]!;
 				const lastSeen = data.updatedAt?.toMillis?.() ?? now;
-				// presence.username denormalize (writePresence'de yazılıyor).
-				// Eski kayıtlar için fallback.
 				const username = data.username?.trim() || `kullanıcı#${data.uid.slice(0, 4)}`;
-				// totalSeconds: users/{uid}.totalSeconds (D-018)
-				const userSnap = await getDoc(doc(db, `users/${data.uid}`));
 				const totalSeconds = userSnap.exists()
 					? (userSnap.data() as { totalSeconds?: number }).totalSeconds ?? 0
 					: 0;

@@ -12,6 +12,8 @@
 	import { timer } from '$lib/stores/timer.svelte';
 	import { isFirebaseEnabled } from '$lib/firebase/client';
 	import { getDeviceUid } from '$lib/firebase/uid';
+	import { loadCached, saveCache } from '$lib/cache/idb';
+	import LeaderboardSkeleton from './LeaderboardSkeleton.svelte';
 	import * as fb from '$lib/firebase/rooms';
 	import * as reactions from '$lib/firebase/reactions';
 	import { playClick } from '$lib/utils/click';
@@ -89,6 +91,15 @@
 			myRooms = cached;
 			checkingRooms = false;
 		}
+
+		// F7 (D-074): leaderboard members cache hydrate — initial render anında cache
+		if (room?.id) {
+			void loadCached<typeof members>(`leaderboard:${room.id}`).then((cachedMembers) => {
+				if (cachedMembers && cachedMembers.length > 0 && members.length === 0) {
+					members = cachedMembers;
+				}
+			});
+		}
 		if (!isFirebaseEnabled()) {
 			checkingRooms = false;
 			return;
@@ -127,6 +138,8 @@
 		}));
 		unsubscribers.add(fb.subscribeRoomMembers(rid, (entries) => {
 			members = entries;
+			// F7 (D-074): cache write — refresh on every snapshot (TTL 30s default).
+			void saveCache(`leaderboard:${rid}`, entries);
 		}));
 		unsubscribers.add(reactions.subscribeReactions(rid, (rs) => {
 			allReactions = rs;
@@ -353,7 +366,9 @@
 			<p>📊 Liderlik için Firebase bağlantısı gerekli. .env.local'e VITE_FIREBASE_* ekle.</p>
 		</div>
 	{:else if checkingRooms}
-		<div class="flex min-h-[40dvh] items-center justify-center text-fg-subtle">Yükleniyor…</div>
+		<div class="flex min-h-[40dvh] items-center justify-center text-fg-subtle">
+			<LeaderboardSkeleton />
+		</div>
 	{:else if !myRoom}
 		<!-- Empty state — oda yok -->
 		<div class="space-y-6 pt-6 text-center">

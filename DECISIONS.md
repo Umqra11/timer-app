@@ -974,4 +974,24 @@ type: decisions-log
   - `mobile/tests/utils/format-last-seen.test.ts` (yeni, 7 vitest unit test)
 - **İlgili task:** Sprint-06 Faz 4 F6
 
+### D-084 · Leaderboard perf+UX — persistedState + skeleton + N+1 fix (D-074 / Sprint-06 Faz 4 F7)
+- **Tarih:** 2026-08-13
+- **Bağlam:** 2026-08-13 patron feedback: "başka bir sayfadan leaderboard sayfasına girdiğimde çok geç ve çirkin bir şekilde yükleniyor sayfa. Böyle bir kaç kez sekiyor bir şeyler oluyor sonra leaderboard geliyor". 2026-08-13 mimari araştırma: vue-pomo `createPersistedState` F7 için referans pattern. Sprint-06 Faz 4 trade-off onayı (D-074): C option = persistedState + skeleton + paralel subscribe.
+- **Karar:**
+  - **N+1 waterfall fix** (`rooms.ts:subscribeRoomMembers`): sequential `for` + `await getDoc` → `Promise.all` parallel map. Index alignment korunur. 1 round-trip tüm `users/{uid}.totalSeconds` için.
+  - **IndexedDB cache layer** (`mobile/src/lib/cache/idb.ts`): idb-keyval (~600 byte, promise-based, IndexedDB). `loadCached<T>(key)`, `saveCache<T>(key, data, ttlMs=30000)`, `clearCache(key)`. Envelope format `{ value, expiresAt }` TTL ile.
+  - **Skeleton** (`mobile/src/routes/leaderboard/LeaderboardSkeleton.svelte`): 6 placeholder row (configurable via `$props`), `animate-pulse` Tailwind utility, `aria-busy` + `aria-live` accessibility. İlk paint'te Yükleniyor… text yerine.
+  - **Cache hydrate** (`leaderboard/+page.svelte` onMount): `loadCached('leaderboard:{roomId}')` → ilk render anında. `subscribeRoomMembers` callback her snapshot'ta `saveCache`.
+- **Gerekçe:** Üç kök neden tek task'ta çözüldü — (1) N+1 waterfall round-trip süresi, (2) cache yok → her initial render Firestore read, (3) skeleton yok → perceptual lag. idb-keyval vue-pomo'nun `createPersistedState`ının IndexedDB eşdeğeri (svelte-persisted-store localStorage = YANLIŞ, async gerekli).
+- **Etki:**
+  - `mobile/src/lib/firebase/rooms.ts` (+15 satır): Promise.all parallel map
+  - `mobile/src/lib/cache/idb.ts` (yeni, 30 satır): IndexedDB cache helpers
+  - `mobile/src/routes/leaderboard/LeaderboardSkeleton.svelte` (yeni, ~25 satır): placeholder rows
+  - `mobile/src/routes/leaderboard/+page.svelte`: cache hydrate + skeleton render + saveCache callback
+  - `mobile/package.json` (+1 dep): `idb-keyval@^6.3.0`
+  - `mobile/tests/utils/leaderboard-cache.test.ts` (yeni, 4 vitest unit test)
+  - `mobile/tests/firebase/rooms-subscribe-parallel.test.ts` (yeni, 2 vitest regression)
+  - `mobile/tests/components/leaderboard-skeleton.test.ts` (yeni, 4 vitest source-grep)
+- **İlgili task:** Sprint-06 Faz 4 F7
+
 

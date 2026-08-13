@@ -28,6 +28,7 @@
 		"vitest": "^4.1.10"
 	},
 	"dependencies": {
-		"firebase": "^12.17.1"
+		"firebase": "^12.17.1",
+		"idb-keyval": "^6.3.0"
 	}
 }
