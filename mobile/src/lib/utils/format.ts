@@ -52,3 +52,29 @@ export function formatHumanShort(totalSeconds: number): string {
 function pad(n: number): string {
 	return n.toString().padStart(2, '0');
 }
+
+/**
+ * Last-seen timestamp — D-070 / Sprint-06 Faz 4 F6.
+ * Türkçe locale, relative → absolute fallback:
+ *   < 60s → "şimdi"
+ *   < 60 dk → "Xdk önce"
+ *   < 24 sa → "Xsa önce"
+ *   < 7 gün (farklı takvim günü) → "dün HH:MM"
+ *   ≥ 7 gün → "DD.MM HH:MM"
+ * Negative diff (clock skew) → "şimdi".
+ */
+export function formatLastSeen(ts: number, now: number = Date.now()): string {
+	const diff = now - ts;
+	if (diff < 60_000) return 'şimdi';
+	if (diff < 60 * 60_000) return `${Math.floor(diff / 60_000)}dk önce`;
+	if (diff < 24 * 60 * 60_000) return `${Math.floor(diff / 3_600_000)}sa önce`;
+	if (diff < 7 * 24 * 60 * 60_000) {
+		const tsDate = new Date(ts);
+		const nowDate = new Date(now);
+		if (tsDate.toDateString() !== nowDate.toDateString()) {
+			return `dün ${pad(tsDate.getHours())}:${pad(tsDate.getMinutes())}`;
+		}
+	}
+	const d = new Date(ts);
+	return `${pad(d.getDate())}.${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}

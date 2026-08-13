@@ -955,4 +955,23 @@ type: decisions-log
   - `mobile/tests/utils/format.test.ts` (yeni, 5 vitest unit test)
 - **İlgili task:** Sprint-06 Faz 4 F2+F4+F8
 
+### D-083 · Last-seen timestamp on leaderboard (D-070 / Sprint-06 Faz 4 F6)
+- **Tarih:** 2026-08-13
+- **Bağlam:** 2026-08-13 patron feedback: "leaderboard'da kullanıcıların son görülme tarihleri ve saatleri küçük bir şekilde yazılsın istiyorum otomatik olarak. diğer kullanıcılar görebilsin o kişi o an online olmasa bile". `LeaderboardEntry.lastSeen` zaten `rooms.ts:369-378` tarafından `presence.updatedAt?.toMillis()` ile populate ediliyor (zero additional write cost). Veri hazır, sadece render katmanı.
+- **Karar:**
+  - **Yeni helper:** `mobile/src/lib/utils/format.ts` — `formatLastSeen(ts, now?): string`. Türkçe locale, relative → absolute fallback:
+    - `< 60s` → `'şimdi'`
+    - `< 60 dk` → `'${mins}dk önce'`
+    - `< 24 sa` → `'${hours}sa önce'`
+    - `< 7 gün` ve farklı takvim günü → `'dün HH:MM'`
+    - `≥ 7 gün` → `'DD.MM HH:MM'`
+    - Negative diff (clock skew) → `'şimdi'`
+  - **Render location:** `leaderboard/+page.svelte` L523 sonrası — secondary line (`text-[10px] text-fg-subtle`). `statusLabel` ile çakışma yok (option B): `finished-late` kendi `"X dk önce bitti"` text'ini korur, yeni line finer-grained timestamp verir.
+- **Gerekçe:** Veri zaten yazıyor (P2 60s heartbeat `updatedAt`'i taze tutuyor, P1 cleanup 24h sonra `idle` yapar). Render-only katman — minimal LOC, zero cost. Diğer kullanıcılar için "online değil ama 14:32'de görüldü" gibi sosyal çıpa düşürür.
+- **Etki:**
+  - `mobile/src/lib/utils/format.ts` (+18 satır): `formatLastSeen` export
+  - `mobile/src/routes/leaderboard/+page.svelte` (+2 satır): import + secondary line render
+  - `mobile/tests/utils/format-last-seen.test.ts` (yeni, 7 vitest unit test)
+- **İlgili task:** Sprint-06 Faz 4 F6
+
 

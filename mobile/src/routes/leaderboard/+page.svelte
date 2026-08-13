@@ -15,7 +15,7 @@
 	import * as fb from '$lib/firebase/rooms';
 	import * as reactions from '$lib/firebase/reactions';
 	import { playClick } from '$lib/utils/click';
-	import { formatHumanDuration } from '$lib/utils/format';
+	import { formatHumanDuration, formatLastSeen } from '$lib/utils/format';
 	import { liveSeconds } from '$lib/utils/live-timer';
 	import { isRoomOwner } from '$lib/utils/owner-check';
 
@@ -521,6 +521,8 @@
 									{#if label}
 										<div class="mt-0.5 text-xs text-fg-muted">{label}</div>
 									{/if}
+									<!-- D-070 last-seen timestamp — secondary line, smaller font -->
+									<div class="text-[10px] text-fg-subtle">{formatLastSeen(m.lastSeen)}</div>
 								</div>
 								<div class="flex items-center gap-3">
 									<div class="text-right">
