@@ -31,6 +31,9 @@ function createTimerStore() {
 	// her iki ortamda typecheck temiz, runtime'da clearInterval her iki tipi de kabul eder.
 	type TickHandle = number | ReturnType<typeof setInterval>;
 	let intervalId: TickHandle | null = null;
+	// P2 — 60s presence heartbeat (status='running' iken aktif). P1 cleanup 24h sonra
+	// stale presence'ı 'idle' yapar; bu heartbeat "last seen" verisini taze tutar.
+	let presenceHeartbeatId: TickHandle | null = null;
 	let roomCtx: RoomContext = null;
 	let unsubscribePresence: (() => void) | null = null;
 	let detachLifecycle: (() => void) | null = null;
@@ -42,6 +45,20 @@ function createTimerStore() {
 			clearInterval(intervalId);
 			intervalId = null;
 		}
+	}
+
+	function clearPresenceHeartbeat() {
+		if (presenceHeartbeatId !== null) {
+			clearInterval(presenceHeartbeatId);
+			presenceHeartbeatId = null;
+		}
+	}
+
+	function startPresenceHeartbeat() {
+		clearPresenceHeartbeat();
+		presenceHeartbeatId = setInterval(() => {
+			void pushToRemote();
+		}, 60_000);
 	}
 
 	// M3 + M2 + M0-fix #1 — async, try/catch, settled queue + 'finished' mapping.
@@ -176,6 +193,8 @@ function createTimerStore() {
 			detachLifecycle = () => {
 				document.removeEventListener('visibilitychange', onVisibility);
 				window.removeEventListener('beforeunload', onBeforeUnload);
+				// P2: heartbeat'i de unmount'ta temizle (presence artık yazılmasın)
+				clearPresenceHeartbeat();
 			};
 		},
 		start() {
@@ -183,10 +202,12 @@ function createTimerStore() {
 			status = 'running';
 			startTick();
 			void pushToRemote();
+			startPresenceHeartbeat();
 		},
 		pause() {
 			if (status !== 'running') return;
 			clearTick();
+			clearPresenceHeartbeat();
 			if (lastTickAt !== null) {
 				elapsedMs += performance.now() - lastTickAt;
 				lastTickAt = null;
@@ -199,6 +220,7 @@ function createTimerStore() {
 			status = 'running';
 			startTick();
 			void pushToRemote();
+			startPresenceHeartbeat();
 		},
 		toggle() {
 			if (status === 'running') this.pause();
@@ -208,6 +230,7 @@ function createTimerStore() {
 			const finalMs = elapsedMs;
 			const startedAt = Date.now() - Math.floor(elapsedMs);
 			clearTick();
+			clearPresenceHeartbeat();
 			lastTickAt = null;
 
 			// M1 fix — Bug A: finish-race. Önceki davranış: client-side
@@ -247,6 +270,7 @@ function createTimerStore() {
 		},
 		reset() {
 			clearTick();
+			clearPresenceHeartbeat();
 			elapsedMs = 0;
 			status = 'idle';
 			lastTickAt = null;
