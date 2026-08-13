@@ -933,4 +933,26 @@ type: decisions-log
 - **Etki:** `mobile/src/lib/utils/owner-check.ts` (yeni, ~15 satır) + `mobile/tests/utils/owner-check.test.ts` (yeni, 6 vitest unit test) + `mobile/src/routes/leaderboard/+page.svelte` (1 satır refactor).
 - **İlgili task:** Sprint-06 Faz 4 F1
 
+### D-082 · Reactive home + profile stats (F2+F4+F8 merge, D-072)
+- **Tarih:** 2026-08-13
+- **Bağlam:** 2026-08-13 patron feedback: "çalışma seansını durdurulduğunda kaç dk çalıştığı o hafta kaç saat çalışıldığı toplamda, o sekansta kaç dk çalışıldığı vs bu bilgiler boş geliyor". Plan'daki F2 (D-018 home stats fix) + F4 (modal unit consistency) + F8 (session stats boş) üçü aynı bug surface altında: `readStats()` async tek seferlik, `subscribeUserWeeklySeconds` leaderboard için tasarlanmış (bugün filtresi yok), UI hardcoded `"0dk"`, `timer.finish()` fire-and-forget (UI signal yok), `profile/+page.svelte:26` `weekSeconds` deprecated bug.
+- **Karar:**
+  - **Firestore extension:**
+    - `stats.ts`: yeni `subscribeStats(cb): Unsubscribe` — `onSnapshot(doc(db, 'users', uid))`, missing doc → `emptyStats()`, error → log + `emptyStats()`.
+    - `sessions.ts`: yeni `subscribeUserDailySeconds(uid, cb): () => void` — `where('dayKey', '==', today)` query, sum elapsedMs.
+  - **UI reactive binding:**
+    - `+page.svelte`: onMount → subscribeStats + subscribeUserDailySeconds + subscribeUserWeeklySeconds. onDestroy cleanup. 4 hardcoded `"0dk"` → `{formatHumanShort(...)}`.
+    - `profile/+page.svelte`: onMount → subscribeStats + subscribeUserDailySeconds. `readStats` async removed, `loading` flag removed (artık her zaman reactive). `s.weekSeconds` deprecated bug fix → `subscribeUserDailySeconds` ile bugün.
+  - **Modal unit standardizasyonu (F4):**
+    - `format.ts`: yeni `formatHumanShort(totalSeconds): string` — "139sn" / "5dk" / "1sa 30dk" / "0dk". Negatif → 0dk. Birim-sonra boşluk YOK (UI kompakt).
+- **Gerekçe:** 3 task aynı bug surface — `readStats()` async tek seferlik, UI signal yok, `weekSeconds` deprecated. Reactive subscribe ile hepsi bağlanır. Single commit atomic (plan kararı merge).
+- **Etki:**
+  - `mobile/src/lib/firebase/stats.ts` (+35 satır): `subscribeStats` export
+  - `mobile/src/lib/firebase/sessions.ts` (+25 satır): `subscribeUserDailySeconds` export + `todayKeyForSession` import
+  - `mobile/src/lib/utils/format.ts` (+15 satır): `formatHumanShort` export
+  - `mobile/src/routes/+page.svelte` (reactive state + 4 hardcoded → reactive + onDestroy cleanup)
+  - `mobile/src/routes/profile/+page.svelte` (subscribe pattern + weekSeconds fix + loading flag removed)
+  - `mobile/tests/utils/format.test.ts` (yeni, 5 vitest unit test)
+- **İlgili task:** Sprint-06 Faz 4 F2+F4+F8
+
 

@@ -27,6 +27,7 @@ import {
 } from 'firebase/firestore';
 import { getDb } from './client';
 import { getDeviceUid } from './uid';
+import { todayKeyForSession } from './stats';
 
 export const WEEK_DAYS = 7;
 const WEEK_MS = WEEK_DAYS * 24 * 60 * 60 * 1000;
@@ -92,6 +93,40 @@ export function subscribeUserWeeklySeconds(
 		},
 		(err) => {
 			console.error('[sessions] weekly subscribe error', err);
+			cb(0);
+		}
+	);
+}
+
+/**
+ * Reactive today's total — D-072 / Sprint-06 Faz 4 F4.
+ * `users/{uid}/sessions` subcollection'dan `dayKey === today` olanları sum'lar.
+ * Callback saniye cinsinden toplam elapsedMs döner.
+ * Return: unsubscribe fn (clearTick pattern).
+ * Offline / no firebase: callback bir kez `0` ile çağrılır, no-op cleanup.
+ */
+export function subscribeUserDailySeconds(
+	uid: string,
+	cb: (seconds: number) => void
+): () => void {
+	const db = getDb();
+	if (!db) {
+		cb(0);
+		return () => {};
+	}
+	const today = todayKeyForSession();
+	return onSnapshot(
+		query(collection(db, `users/${uid}/sessions`), where('dayKey', '==', today)),
+		(snap) => {
+			let totalMs = 0;
+			for (const d of snap.docs) {
+				const data = d.data() as Partial<SessionDoc>;
+				totalMs += data.elapsedMs ?? 0;
+			}
+			cb(Math.floor(totalMs / 1000));
+		},
+		(err) => {
+			console.error('[sessions] daily subscribe error', err);
 			cb(0);
 		}
 	);

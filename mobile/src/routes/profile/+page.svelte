@@ -6,27 +6,36 @@
 	import { username } from '$lib/stores/username.svelte';
 	import { goto } from '$app/navigation';
 	import { isFirebaseEnabled } from '$lib/firebase/client';
-	import { readStats } from '$lib/firebase/stats';
+	import { subscribeStats } from '$lib/firebase/stats';
+	import { subscribeUserDailySeconds } from '$lib/firebase/sessions';
 	import { formatHumanDuration } from '$lib/utils/format';
-	import { onMount } from 'svelte';
+	import { getDeviceUid } from '$lib/firebase/uid';
+	import { onMount, onDestroy } from 'svelte';
 
 	let streak = $state(0);
 	let todaySeconds = $state(0);
 	let totalSeconds = $state(0);
 	let lastDayWorked = $state<string | null>(null);
-	let loading = $state(true);
+	let unsubscribers: Array<() => void> = [];
 
-	onMount(async () => {
-		if (!isFirebaseEnabled()) {
-			loading = false;
-			return;
-		}
-		const s = await readStats();
-		streak = s.streak;
-		todaySeconds = s.weekSeconds;
-		totalSeconds = s.totalSeconds;
-		lastDayWorked = s.lastDayWorked;
-		loading = false;
+	onMount(() => {
+		if (!isFirebaseEnabled()) return;
+		const uid = getDeviceUid();
+		// D-072 reactive stats — Sprint-06 Faz 4 F2+F4+F8 merge.
+		// weekSeconds (deprecated) artık subscribeUserDailySeconds ile bugün filtresi.
+		unsubscribers.push(
+			subscribeStats((s) => {
+				streak = s.streak;
+				totalSeconds = s.totalSeconds;
+				lastDayWorked = s.lastDayWorked;
+			})
+		);
+		unsubscribers.push(subscribeUserDailySeconds(uid, (s) => (todaySeconds = s)));
+	});
+
+	onDestroy(() => {
+		for (const u of unsubscribers) u();
+		unsubscribers = [];
 	});
 
 	function handleLogout() {
@@ -90,14 +99,14 @@
 				<!-- Bugün -->
 				<div class="rounded-2xl border border-border bg-surface p-4 text-center">
 					<div class="text-2xl font-semibold tabular-nums">
-						{loading ? '…' : todayText}
+						{todayText}
 					</div>
 					<div class="mt-1 text-[11px] text-fg-muted">bugün</div>
 				</div>
 				<!-- Toplam -->
 				<div class="rounded-2xl border border-border bg-surface p-4 text-center">
 					<div class="text-2xl font-semibold tabular-nums">
-						{loading ? '…' : totalText}
+						{totalText}
 					</div>
 					<div class="mt-1 text-[11px] text-fg-muted">toplam</div>
 				</div>

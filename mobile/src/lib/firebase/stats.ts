@@ -18,7 +18,8 @@
  * client tarafında "YYYY-MM-DD" üretilir — sunucu tarafında timezone yok.
  */
 
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
+import type { Unsubscribe } from 'firebase/firestore';
 import { getDb } from './client';
 import { getDeviceUid } from './uid';
 
@@ -123,4 +124,35 @@ export async function touchStreak(addedSeconds: number): Promise<Stats> {
 		{ merge: true }
 	);
 	return next;
+}
+
+/**
+ * Reactive stats subscription — D-072 / Sprint-06 Faz 4 F2.
+ * `users/{uid}` doc değiştiğinde callback tetiklenir.
+ * Return: unsubscribe fn (clearTick pattern, onDestroy'da çağrılır).
+ * Offline / no firebase: callback bir kez `emptyStats()` ile çağrılır, no-op cleanup.
+ */
+export function subscribeStats(cb: (s: Stats) => void): Unsubscribe {
+	const db = getDb();
+	if (!db) {
+		cb(emptyStats());
+		return () => {};
+	}
+	const uid = getDeviceUid();
+	return onSnapshot(doc(db, 'users', uid), (snap) => {
+		if (!snap.exists()) {
+			cb(emptyStats());
+			return;
+		}
+		const data = snap.data() as StatsRaw;
+		cb({
+			streak: data.streak ?? 0,
+			lastDayWorked: data.lastDayWorked ?? null,
+			totalSeconds: data.totalSeconds ?? 0,
+			weekSeconds: data.weekSeconds ?? 0
+		});
+	}, (err) => {
+		console.error('[stats] subscribeStats error', err);
+		cb(emptyStats());
+	});
 }

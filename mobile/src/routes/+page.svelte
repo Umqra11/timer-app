@@ -9,11 +9,14 @@
 <script lang="ts">
 	import { username } from '$lib/stores/username.svelte';
 	import { timer } from '$lib/stores/timer.svelte';
-	import { formatHMS } from '$lib/utils/format';
+	import { formatHMS, formatHumanShort } from '$lib/utils/format';
 	import { playClick } from '$lib/utils/click';
 	import { onMount, onDestroy } from 'svelte';
 	import { isFirebaseEnabled } from '$lib/firebase/client';
 	import { rooms } from '$lib/stores/rooms.svelte';
+	import { subscribeStats } from '$lib/firebase/stats';
+	import { subscribeUserDailySeconds, subscribeUserWeeklySeconds } from '$lib/firebase/sessions';
+	import { getDeviceUid } from '$lib/firebase/uid';
 
 	// Fix 5: lastRoomId guard — Firestore snapshot re-fires create new `rooms.hero`
 	// object refs, causing $effect to re-run and call setRoomContext which would
@@ -37,6 +40,12 @@
 	// Kutlama modalı (D-036)
 	let showCelebration = $state(false);
 	let lastSessionSeconds = $state(0);
+
+	// D-072 reactive stats — Sprint-06 Faz 4 F2+F4+F8 merge
+	let todaySeconds = $state(0);
+	let weekSeconds = $state(0);
+	let totalSeconds = $state(0);
+	let unsubscribers: Array<() => void> = [];
 
 	function handlePause() {
 		playClick();
@@ -72,6 +81,13 @@
 
 	onMount(() => {
 		rooms.subscribe();
+		// D-072: reactive stats — Firestore onSnapshot ile anında UI güncellemesi
+		if (isFirebaseEnabled()) {
+			const uid = getDeviceUid();
+			unsubscribers.push(subscribeStats((s) => (totalSeconds = s.totalSeconds)));
+			unsubscribers.push(subscribeUserDailySeconds(uid, (s) => (todaySeconds = s)));
+			unsubscribers.push(subscribeUserWeeklySeconds(uid, (s) => (weekSeconds = s)));
+		}
 	});
 
 	$effect(() => {
@@ -88,6 +104,9 @@
 	onDestroy(() => {
 		timer.setRoomContext(null);
 		rooms.dispose();
+		// D-072: stats subscription cleanup
+		for (const u of unsubscribers) u();
+		unsubscribers = [];
 	});
 </script>
 
@@ -172,10 +191,10 @@
 				class="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-5 py-2 text-sm"
 			>
 				<span class="text-fg-muted">Bugün:</span>
-				<span class="font-semibold tabular-nums">0dk</span>
+				<span class="font-semibold tabular-nums">{formatHumanShort(todaySeconds)}</span>
 				<span class="text-fg-subtle">·</span>
 				<span class="text-fg-muted">Bu hafta:</span>
-				<span class="font-semibold tabular-nums">0dk</span>
+				<span class="font-semibold tabular-nums">{formatHumanShort(weekSeconds)}</span>
 			</div>
 		</div>
 
@@ -200,8 +219,8 @@
 			</h2>
 			<p class="mt-4 text-sm text-fg-muted">
 				Bu seans <span class="font-semibold text-fg">{lastSessionSeconds}sn</span> ·
-				Bugün toplam <span class="font-semibold text-fg">0dk</span> ·
-				Bu hafta toplam <span class="font-semibold text-fg">0dk</span>
+				Bugün toplam <span class="font-semibold text-fg">{formatHumanShort(todaySeconds)}</span> ·
+				Bu hafta toplam <span class="font-semibold text-fg">{formatHumanShort(weekSeconds)}</span>
 			</p>
 			<p class="mt-3 text-sm text-fg-subtle">
 				Bu hafta henüz rozet yok — ama her dakika sayılıyor!
