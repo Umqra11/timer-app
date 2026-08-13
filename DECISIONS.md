@@ -922,4 +922,15 @@ type: decisions-log
   - `mobile/src/lib/firebase/rooms.ts:307-329` deleteRoom callable refactor
 - **İlgili task:** Sprint-06 Faz 4 F3
 
+### D-080 · isRoomOwner pure helper — defensive UI guard (D-060 setup / Sprint-06 Faz 4 F1)
+- **Tarih:** 2026-08-13
+- **Bağlam:** 2026-08-13 patron feedback: "Odayı sil butonu tüm üyelerde görünüyor, isOwner guard eksik". Keşif: buton `leaderboard/+page.svelte` L580-588'de (modal L768-799), `isOwner` guard ZATEN VAR (L80-82: `$derived(room !== null && getDeviceUid() === room.ownerUid)`). Buton render `{#if isOwner}` ile sarılı. Plan varsayımı muhtemelen eski build cache — gerçek bug defensive sertleştirme ile çözülür.
+- **Karar:**
+  - **Pure helper extract:** `mobile/src/lib/utils/owner-check.ts` — `isRoomOwner(roomOwnerUid, callerUid): boolean`. Null-safety: herhangi biri eksikse `false`. Vitest 6 case (match, mismatch, undefined owner, empty owner, null caller, both missing).
+  - **Leaderboard refactor (1 satır):** `leaderboard/+page.svelte:80-82` — inline check → `isRoomOwner(room.ownerUid, getDeviceUid())`. Buton render guarded kalır.
+  - **NOT security boundary** — gerçek güvenlik D-081 (F3 callable Cloud Function + `firestore.rules` `delete: if false`) tarafından sağlanır. Bu helper sadece UI button render'ı.
+- **Gerekçe:** Inline check tekrarlanabilir hata kaynağı (her yerde `===` karşılaştırma + null-check). Pure helper test edilebilir, helper ile ileride uid resolution (D-015) veya legacy-data bug'ı ekarte edilirse merkezi yerden fixlenir.
+- **Etki:** `mobile/src/lib/utils/owner-check.ts` (yeni, ~15 satır) + `mobile/tests/utils/owner-check.test.ts` (yeni, 6 vitest unit test) + `mobile/src/routes/leaderboard/+page.svelte` (1 satır refactor).
+- **İlgili task:** Sprint-06 Faz 4 F1
+
 

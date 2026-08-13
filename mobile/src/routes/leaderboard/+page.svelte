@@ -17,6 +17,7 @@
 	import { playClick } from '$lib/utils/click';
 	import { formatHumanDuration } from '$lib/utils/format';
 	import { liveSeconds } from '$lib/utils/live-timer';
+	import { isRoomOwner } from '$lib/utils/owner-check';
 
 	// 1 saniyelik tick — leaderboard'daki canlı süreler için
 	let nowMs = $state(Date.now());
@@ -78,7 +79,7 @@
 	let actionSending = $state(false);
 
 	const isOwner = $derived(
-		room !== null && getDeviceUid() === room.ownerUid
+		room !== null && isRoomOwner(room.ownerUid, getDeviceUid())
 	);
 
 	onMount(() => {
