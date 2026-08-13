@@ -25,8 +25,21 @@ export type RoomContext = { roomId: string; username: string } | null;
 
 function createTimerStore() {
 	let status: TimerStatus = $state('idle');
-	let elapsedMs = $state(0);
-	let lastTickAt: number | null = $state(null);
+	// P3 (D-077) — pure-function tick refactor. elapsedMs artık mutatif $state
+	// değil; iki state'e ayrıldı: accumulatedMs (finalize edilen süre) + startedAt
+	// (current segment başlangıcı). Her 100ms tick'te nowTick $state güncellenir →
+	// elapsedMs $derived re-evaluate olur → reactive UI doğru hesap.
+	// Tab background'a geçince 100ms tick durur; visibilitychange → visible'da
+	// nowTick = Date.now() çağrısı elapsedMs'i re-trigger eder (5 saniye gap kapanır).
+	let accumulatedMs = $state(0);
+	let startedAt: number | null = $state(null);
+	let nowTick = $state(Date.now());
+
+	const elapsedMs = $derived(
+		startedAt !== null ? accumulatedMs + (nowTick - startedAt) : accumulatedMs
+	);
+	const displaySeconds = $derived(Math.floor(elapsedMs / 1000));
+
 	// setInterval browser'da number, @types/node'da Timeout döndürür. Union ile
 	// her iki ortamda typecheck temiz, runtime'da clearInterval her iki tipi de kabul eder.
 	type TickHandle = number | ReturnType<typeof setInterval>;
@@ -37,8 +50,6 @@ function createTimerStore() {
 	let roomCtx: RoomContext = null;
 	let unsubscribePresence: (() => void) | null = null;
 	let detachLifecycle: (() => void) | null = null;
-
-	const displaySeconds = $derived(Math.floor(elapsedMs / 1000));
 
 	function clearTick() {
 		if (intervalId !== null) {
@@ -96,24 +107,22 @@ function createTimerStore() {
 
 	function startTick() {
 		clearTick();
-		lastTickAt = performance.now();
+		nowTick = Date.now();
 		intervalId = setInterval(() => {
-			if (lastTickAt === null) return;
-			const now = performance.now();
-			elapsedMs += now - lastTickAt;
-			lastTickAt = now;
+			// P3: elapsedMs mutatif değil. nowTick state güncellenir → $derived re-evaluate.
+			nowTick = Date.now();
 			timerBroadcast.send({ type: 'tick', elapsedMs, status });
 		}, TICK_MS);
 	}
 
 	function applyRemote(state: { elapsedMs: number; status: TimerStatus }) {
 		clearTick();
-		elapsedMs = state.elapsedMs;
+		accumulatedMs = state.elapsedMs;
+		startedAt = state.status === 'running' ? Date.now() : null;
+		nowTick = Date.now();
 		status = state.status;
 		if (status === 'running') {
 			startTick();
-		} else {
-			lastTickAt = null;
 		}
 	}
 
@@ -184,6 +193,8 @@ function createTimerStore() {
 				// doesn't appear stale and timer owners see "online" immediately on return.
 				if (roomCtx && (document.visibilityState === 'hidden' || document.visibilityState === 'visible')) {
 					pushToRemote();
+					// P3: tab background'dan dönünce elapsedMs'i re-tetikle (5s+ gap kapanır)
+					if (document.visibilityState === 'visible') nowTick = Date.now();
 				}
 			};
 			const onBeforeUnload = () => {
@@ -203,6 +214,8 @@ function createTimerStore() {
 		start() {
 			if (status === 'running') return;
 			status = 'running';
+			startedAt = Date.now();
+			nowTick = Date.now();
 			startTick();
 			void pushToRemote();
 			startPresenceHeartbeat();
@@ -211,16 +224,19 @@ function createTimerStore() {
 			if (status !== 'running') return;
 			clearTick();
 			clearPresenceHeartbeat();
-			if (lastTickAt !== null) {
-				elapsedMs += performance.now() - lastTickAt;
-				lastTickAt = null;
+			if (startedAt !== null) {
+				accumulatedMs += Date.now() - startedAt;
+				startedAt = null;
 			}
+			nowTick = Date.now();
 			status = 'paused';
 			void pushToRemote();
 		},
 		resume() {
 			if (status !== 'paused') return;
 			status = 'running';
+			startedAt = Date.now();
+			nowTick = Date.now();
 			startTick();
 			void pushToRemote();
 			startPresenceHeartbeat();
@@ -231,10 +247,14 @@ function createTimerStore() {
 		},
 		finish() {
 			const finalMs = elapsedMs;
-			const startedAt = Date.now() - Math.floor(elapsedMs);
+			const sessionStartedAt = Date.now() - Math.floor(elapsedMs);
 			clearTick();
 			clearPresenceHeartbeat();
-			lastTickAt = null;
+			if (startedAt !== null) {
+				accumulatedMs += Date.now() - startedAt;
+				startedAt = null;
+			}
+			nowTick = Date.now();
 
 			// M1 fix — Bug A: finish-race. Önceki davranış: client-side
 			// writePresence('finished') + hemen sonra elapsedMs=0, status='idle', pushToRemote().
@@ -249,7 +269,7 @@ function createTimerStore() {
 				// D-067: weekly sessions log
 				void sessions.recordSession({
 					dayKey: stats.todayKeyForSession(),
-					startedAt,
+					startedAt: sessionStartedAt,
 					endedAt: Date.now(),
 					elapsedMs: finalMs
 				});
@@ -259,24 +279,29 @@ function createTimerStore() {
 				// 1) status='finished' set + pushToRemote (server-side 'finished' merge)
 				status = 'finished';
 				void pushToRemote();
-				// 2) 250ms sonra elapsedMs=0, status='idle', pushToRemote (server-side 'idle')
+				// 2) 250ms sonra accumulatedMs=0, status='idle', pushToRemote (server-side 'idle')
 				setTimeout(() => {
-					elapsedMs = 0;
+					accumulatedMs = 0;
+					startedAt = null;
+					nowTick = Date.now();
 					status = 'idle';
 					void pushToRemote();
 				}, 250);
 			} else {
 				// Offline / no room — eski davranış (sadece local reset, throttle gereksiz)
-				elapsedMs = 0;
+				accumulatedMs = 0;
+				startedAt = null;
+				nowTick = Date.now();
 				status = 'idle';
 			}
 		},
 		reset() {
 			clearTick();
 			clearPresenceHeartbeat();
-			elapsedMs = 0;
+			accumulatedMs = 0;
+			startedAt = null;
+			nowTick = Date.now();
 			status = 'idle';
-			lastTickAt = null;
 			void pushToRemote();
 		},
 		applyRemote,
