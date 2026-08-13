@@ -17,6 +17,7 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+import { logger } from 'firebase-functions';
 
 if (getApps().length === 0) initializeApp();
 const db = getFirestore();
@@ -86,9 +87,12 @@ export const onDeleteRoom = onCall(
 		);
 
 		await roomRef.delete();
-		console.info(
-			`[onDeleteRoom] room=${roomId} owner=${uid} presence=${presenceDeleted} reactions=${reactionsDeleted}`
-		);
+		logger.info('onDeleteRoom.success', {
+			roomId,
+			ownerUid: uid,
+			presenceDeleted,
+			reactionsDeleted
+		});
 		return { ok: true as const };
 	}
 );

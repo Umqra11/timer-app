@@ -19,6 +19,7 @@
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { logger } from 'firebase-functions';
 
 if (getApps().length === 0) initializeApp();
 const db = getFirestore();
@@ -59,9 +60,9 @@ export const cleanupPresence = onSchedule(
       }
       await batch.commit();
       lastDoc = snap.docs[snap.docs.length - 1];
-      console.info(`[cleanupPresence] batch updated: ${snap.size}, total: ${totalCleaned}`);
+      logger.info('cleanupPresence.batch', { batchSize: snap.size, totalCleaned });
     } while (lastDoc);
 
-    console.info(`[cleanupPresence] done. marked ${totalCleaned} stale docs as idle`);
+    logger.info('cleanupPresence.done', { totalCleaned });
   }
 );

@@ -1,4 +1,5 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { logger } from 'firebase-functions';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore, FieldValue, type Transaction } from 'firebase-admin/firestore';
 
@@ -94,7 +95,7 @@ export const sendReaction = onCall(async (request): Promise<ReactionResult> => {
 
 		return result;
 	} catch (err) {
-		console.error('[sendReaction] tx failed', err);
+		logger.error('sendReaction.txFailed', { err });
 		return { ok: false, reason: 'unavailable' };
 	}
 });
