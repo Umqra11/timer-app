@@ -759,5 +759,150 @@ type: decisions-log
 - **Etki:** `mobile/src/lib/utils/live-timer.ts` (`liveSeconds`, `formatHMS` helpers); `+page.svelte` `liveSeconds` render + 1s interval; `LeaderboardEntry.weeklySeconds: number` tip tanımı güncellendi. `totalText` helper kullanılmadığı için kaldırıldı.
 - **İlgili task:** Sprint-05 Faz 1.5, Task 6
 
+### D-069 · No-badge policy (gamification rozet/medal sistemi YOK)
+- **Tarih:** 2026-08-13
+- **Bağlam:** 2026-08-13 patron talebi: "badge sistemi istemiyorum". Mevcut codebase'de `badge` mention'ları sadece UI status text ("finished badge") — championship/rozet/medal sistemi yok. Sprint-06 Faz 6'da park edilmiş "Şampiyonluk rozet (KPSS-Love §8.6)" ve "Championship + multi-period leaderboard" kalemleri artık prod roadmap'inde DEĞİL.
+- **Karar:**
+  - Gamification rozet/medal/trophy sistemi prod roadmap'inden kalıcı olarak çıkarıldı.
+  - Sadece status label (running/paused/finished) sergilenir — UI "badge" kelimesi status badge'i için kalabilir (görsel indicator), championship DEĞİL.
+  - Sprint-06 Faz 5 T5: codebase grep `badge|rozet|medal|achievement|trophy` (case-insensitive) → varsa championship context'inde olanları temizle.
+- **Gerekçe:** MVP scope disiplini. Gamification ertelenmesi süresiz — backlog'a geri alma niyeti yok. Patron açıkça reddetti.
+- **Etki:** `docs/superpowers/plans/2026-08-13-sprint-06-roadmap.md` Faz 6 "Şampiyonluk rozet" + "Championship + multi-period leaderboard" ~~üstü çizili~~. Faz 5'e T5 eklendi. BACKLOG.md'de Faz 6 park bölümü patron review'unda çıkarılacak.
+- **İlgili task:** Sprint-06 Faz 5 T5
+
+### D-070 · Last-seen tarih/saat leaderboard'da (presence updatedAt UI)
+- **Tarih:** 2026-08-13
+- **Bağlam:** 2026-08-13 patron talebi: "leaderboard'da kullanıcıların son görülme tarihleri ve saatleri küçük bir şekilde yazılsın istiyorum otomatik olarak. diğer kullanıcılar görebilsin o kişi o an online olmasa bile". Mevcut `presence/{uid}` doc'unda `updatedAt: serverTimestamp()` zaten yazılıyor (D-050, presence.ts:56) — veri var, UI eksik.
+- **Karar:**
+  - `/leaderboard/+page.svelte` her kullanıcı satırına küçük (font-size ~0.75rem, secondary text color) "son görülme" rozeti ekle.
+  - Relative time format: < 1dk "şimdi", < 60dk "Xdk önce", < 24h "Xsa önce", ≥ 24h `dün HH:MM` veya `DD.MM HH:MM` (locale TR).
+  - `status === 'running'` ise gösterilmez (zaten live dot/yanıp sönen nokta D-064 var), "online" denilir.
+  - `lastSeen = entry.lastSeen ?? entry.updatedAt` (D-068 ile uyumlu).
+- **Gerekçe:** Veri hazır (zero-cost), sadece render katmanı. Online olmayan kullanıcıyı "ne zaman görüldü" ile göstermek sosyal çıpası düşürür. Status label `finished-late` (leaderboard:184) ile çakışmamalı — yeni ayrı helper.
+- **Etki:** `leaderboard/+page.svelte` render + `formatLastSeen()` helper. `statusLabel()` refactor gerekebilir (805 satır).
+- **İlgili task:** Sprint-06 Faz 4 F6
+
+### D-071 · Leaderboard yavaş + çirkin yükleniyor (perf + UX sprint)
+- **Tarih:** 2026-08-13
+- **Bağlam:** 2026-08-13 patron: "başka bir sayfadan leaderboard sayfasına girdiğimde çok geç ve çirkin bir şekilde yükleniyor sayfa. Böyle bir kaç kez sekiyor bir şeyler oluyor sonra leadeboard geliyor". 805 satırlık `/leaderboard/+page.svelte`, paralel olmayan subscribe'lar, skeleton eksik, I3 lifecycle reset.
+- **Karar:**
+  - Sprint-06 Faz 4 F7: kök neden tespiti için (a) `subscribeRoomPresence` + `subscribeLeaderboard` paralel başlat (`Promise.all` veya Svelte 5 `untrack`); (b) skeleton/loading state; (c) I3 `setRoomContext` cleanup pre-subscribe'i silmiyor mu kontrol; (d) route enter animasyonu layout shift yaratıyor mu ölç.
+  - Manual smoke test patron browser'da: başka sayfadan leaderboard'a navigate → flicker sayısı, süre.
+  - Lighthouse / DevTools performance trace ile FCP, LCP kaydı.
+- **Gerekçe:** UX bug sprint'inde F1+F2 ile paketlenmeli (izole quick-win). Ölçmeden tahmin yürütmek kök nedeni kaçırır.
+- **Etki:** `/leaderboard/+page.svelte` refactor — subscribe sırası + skeleton + layout shift. Vitest test: cleanup don't drop first snapshot.
+- **İlgili task:** Sprint-06 Faz 4 F7
+
+### D-072 · Session stats boş (readStats reactive + handleStop fix)
+- **Tarih:** 2026-08-13
+- **Bağlam:** 2026-08-13 patron: "çalışma seansını durdurulduğunda kaç dk çalıştığı o hafta kaç saat çalışıldığı toplamda, o sekansta kaç dk çalışıldığı vs bu bilgiler boş geliyor". Plan'daki F2 (D-018 home stats fix) + F4 (modal unit consistency) kapsamında — bu D, scope'u netleştirir: stats sadece home'da değil, seans bitiş modal'ında + tüm reactive consumer'larda görünmeli.
+- **Karar:**
+  - Sprint-06 Faz 4 F2 + F4 + F8 merge: `readStats()` + `subscribeStatsForUser()` her consumer için aynı kaynak.
+  - `handleStop()` sonrası stats anında reactive olmalı — şu an readStats subscription stop sonrası refresh etmiyor olabilir (olası kök: `timer.svelte.ts` finish sonrası subscription invalidation yok).
+  - Vitest regression: stop → 50ms içinde stats görünür (bugün/hafta/toplam/seans).
+  - Modal'da "139sn / Bugün 0dk / Bu hafta 0dk" çelişkisi: birim standardizasyonu + reactive weekly sum (F4).
+- **Gerekçe:** Reactive stats zaten D-018'in scope'unda — patron feedback'i "scope yeterince geniş değil" sinyali. F2+F4+F8 bir sprint'e paketlenmeli.
+- **Etki:** `mobile/src/lib/firebase/stats.ts` (readStats subscription invalidation fix), `+page.svelte` (modal unit standardizasyon), `timer.svelte.ts` (finish callback).
+- **İlgili task:** Sprint-06 Faz 4 F2 + F4 + F8
+
+### D-073 · Heatmap feature = data viz only (D-069 ile uyumlu, Sprint-07 backlog)
+- **Tarih:** 2026-08-13
+- **Bağlam:** 2026-08-13 trade-off analizi: vue-pomo (`halebopp/vue-pomo`, 52 ⭐) `cal-heatmap` library kullanarak GitHub-style 365-day activity heatmap render ediyor. D-067 sessions subcollection zaten data sağlıyor. Patron D-069 ile "badge/rozet/medal sistemi istemiyorum" dedi — heatmap data viz olarak gamification DEĞİL.
+- **Karar:**
+  - **Heatmap = pure data visualization.** İsmi "aktivite haritası" veya "çalışma geçmişi" olsun — `streak` / `combo` / `level` / `achievement` kelimeleri YOK.
+  - Library: `cal-heatmap` (vue-pomo kanıtladı, ~30kb gzipped, tree-shakeable).
+  - Data source: `users/{uid}/sessions/{sessionId}` subcollection (D-067).
+  - Sprint-07 backlog'a al — Sprint-06 Faz 4'te scope creep değil.
+  - **Policy:** Heatmap'in yanında "şu kadar gün üst üste" gibi streak metrikleri ASLA gösterilmez. Sadece renk yoğunluğu = günlük toplam dakika.
+- **Gerekçe:** D-069 strict yorumu — gamification reddedildi ama data viz serbest. Heatmap, kullanıcının kendi geçmişini görmesi için nötr bir araç; ödüllendirme içermez. cal-heatmap battle-tested (4 yıllık lib, 1k+ ⭐). Sessions subcollection zaten doğru data'yı sağlıyor (zero additional write cost).
+- **Etki:** Sprint-07 Faz 1'de 4-6 saatlik feature. Şu an implementation yok — sadece policy.
+- **İlgili task:** Sprint-07 backlog (Sprint-06 sonrası)
+
+### D-074 · F7 leaderboard perf+UX = persistedState cache + skeleton kombine
+- **Tarih:** 2026-08-13
+- **Bağlam:** 2026-08-13 patron feedback: "başka sayfadan leaderboard sayfasına girdiğimde çok geç ve çirkin bir şekilde yükleniyor sayfa. Böyle bir kaç kez sekiyor bir şeyler oluyor sonra leaderboard geliyor". 805 satırlık `/leaderboard/+page.svelte`, paralel subscribe eksik, skeleton yok. 2026-08-13 mimari araştırması vue-pomo `createPersistedState` pattern'ini referans gösterdi.
+- **Karar:**
+  - **F7 = persistedState (IndexedDB) + skeleton + paralel subscribe** (C option trade-off analizi).
+  - **Cache layer:** IndexedDB'de `leaderboard:{roomId}` store. İlk render cache'ten, sonra Firestore subscribe ile hydrate. Oda değişince cache temizle.
+  - **Skeleton:** İlk paint'te `LeaderboardSkeleton.svelte` (placeholder rows) — Firestore subscribe başlayınca skeleton fade-out.
+  - **Parallel subscribe:** `Promise.all([subscribeLeaderboard(roomId), subscribeRoomPresence(roomId)])` ile waterfall'i kır.
+  - **Library:** `svelte-persisted-store` (Svelte 5 runes uyumlu) veya vanilla IndexedDB wrapper.
+  - **Effort:** 2-3 saat (önceki 1-2 saat tahmini C option ile güncellendi).
+- **Gerekçe:** İlk kez yükleme + refresh sonrası flicker'ı aynı anda çözer. vue-pomo kanıtladı: persistedState + subscribe = flicker sıfır UX. Skeleton perceptual performance'ı artırır (kullanıcı boş ekran yerine progress görür). Paralel subscribe round-trip süresini yarıya indirir.
+- **Etki:** `mobile/src/lib/utils/leaderboard-cache.ts` (yeni, IndexedDB wrapper), `LeaderboardSkeleton.svelte` (yeni), `leaderboard/+page.svelte` refactor (subscribe sırası + cache hydrate + skeleton). Vitest test: cache hit/miss/invalidation.
+- **İlgili task:** Sprint-06 Faz 4 F7
+
+### D-075 · D-015 cross-user hardening = Sprint-07+'ya park (F3 kısmi çözüm)
+- **Tarih:** 2026-08-13
+- **Bağlam:** D-015 device-uid auth-free'nin cross-user corruption riski (Firestore rules `allow read, write: if true` → başka uid adına yazma tehdidi teorik). 2026-08-13 trade-off analizi: A (rules sıkılaştır) auth-free contract'ı bozar, B (Function enforcement) yazma gecikmesi + tx retry, C (park) Sprint-06 zaten dolu.
+- **Karar:**
+  - **D-015 hardening Sprint-07+'ya park.** Exploit kanıtı yok, risk teorik.
+  - **F3 (owner delete server-side Cloud Function) kısmi çözüm sağlıyor:** D-015'in en kritik vektörü (cross-user delete) F3 ile kapanıyor. Kalan risk: cross-user write (presence/sessions) — kabul edilebilir, prod'da kanıtlanmış abuse yok.
+  - Sprint-07 Faz 1'de: vue-pomo tarzı `auth.uid === $uid` rules sıkılaştırması + Cloud Function enforcement kombine tasarım (4-6 saat, auth-free contract ile uyumlu uid claim mekanizması gerekir).
+- **Gerekçe:** Sprint-06 Faz 4-5 zaten 10+ saat iş. D-015 hardening ayrı sprint worthy (rules rollout + client uyumu + test cycle). F3 %30 çözüm sağlıyor, kalan %70 Sprint-07'de temiz alınır. "Park edilmiş ama izlenen" stratejisi — DECISIONS'ta explicit.
+- **Etki:** Sprint-06 Faz 6 "D-015 hardening (Sprint-08+)" → "Sprint-07 Faz 1" olarak refine edildi.
+- **İlgili task:** Sprint-07 Faz 1 (Sprint-06 sonrası)
+
+### D-076 · M3 durable queue = Sprint-07'ye park (in-memory yeterli şimdilik)
+- **Tarih:** 2026-08-13
+- **Bağlam:** M3 settle queue (`mobile/src/lib/stores/timer.svelte.ts` M3 implementation) in-memory `Map<opId, Op>` — tab close / browser crash'de queue kayıp. 2026-08-13 trade-off analizi: A (Sprint-06 Faz 5'e ekle) sprint dolu, B (Sprint-07'ye park) temiz scope, C (olduğu gibi) risk canlı.
+- **Karar:**
+  - **M3 durable queue Sprint-07 Faz 1'e park.**
+  - Sprint-06'da M3 in-memory queue production'da kalır — edge case çok nadir (kullanıcı sekme kapatıp 30dk içinde geri açmazsa kayıp).
+  - Sprint-07'de Sessions'ın `syncPendingSessions` pattern'i uygulanır: IndexedDB store + replay logic + race condition handling (2-3 saat).
+- **Gerekçe:** In-memory queue production'da çalışıyor, edge case production telemetry'sinde 1-2 reaction/maksimum kayıp. Sprint-06 Faz 5 zaten 2.5 saat (T1+T4+T5) — 3-4 saat ek = 5.5-6.5 saat sprint aşırı yük. Sprint-07'de Sessions referansı ile temiz implementation.
+- **Etki:** Şu an implementation yok (sadece park kararı). Sprint-07 Faz 1'de `mobile/src/lib/utils/queue-store.ts` (IndexedDB wrapper) + M3 replay logic refactor.
+- **İlgili task:** Sprint-07 Faz 1
+
+### D-077 · P3 tick refactor = pure function `$derived` (Pomotroid Rust overkill)
+- **Tarih:** 2026-08-13
+- **Bağlam:** 2026-08-13 plan P3 "tick yapma hesapla refactor — mutative `elapsedMs += now - lastTickAt` → pure `$derived(accumulatedMs + (now - startedAt))`. Tab background'a geçince elapsedMs doğru çalışsın." Pomotroid mimari analizi: Rust state machine + Svelte IPC event pattern'i timer survives UI reload için — ama bu **Tauri/masaüstü** için. Biz **statik SvelteKit PWA** — service layer yok.
+- **Karar:**
+  - **P3 = pure function `$derived` (B option trade-off analizi).** Pomotroid Rust yaklaşımı **overkill** — bizim mimari için yanlış abstraction layer.
+  - `elapsedMs = $derived(accumulatedMs + (now - startedAt))` — tab background'ta `now` hâlâ doğru (System.currentTimeMillis monotonic değil ama elapsed hesabı için yeterli, drift sadece ilk paint'te görünür).
+  - **Edge case:** saat değişikliği (DST) → vitest regression test ile yakalanır.
+  - **Effort:** 1 saat (plan'daki tahmin onaylandı).
+- **Gerekçe:** Pomotroid Rust state machine separation Tauri desktop için doğru trade-off (timer survives binary kill). Biz Firebase Hosting + static SvelteKit — service layer eklemek mimari rework, deploy karmaşıklığı, ROI negatif. Pure function + `$derived` aynı doğruluk, %10 effort, Svelte 5 native pattern.
+- **Etki:** `mobile/src/lib/stores/timer.svelte.ts` refactor — mutatif `elapsedMs += ...` → derived. Vitest regression: 1dk çalıştır → tab background 5dk → foreground → elapsedMs doğru (≈6dk).
+- **İlgili task:** Sprint-06 Faz 6 P3
+
 ---
+
+**2026-08-13 trade-off analizi özet:** Patron 5 mimari soruya karar verdi (F7=C, D-015=C, M3=B, heatmap=A, P3=B). Sprint-06 scope finalize: 14 saat, 2-3 sprint günü. Sprint-07 backlog'a M3 durable queue + D-015 hardening + heatmap feature düşürüldü.
+
+### D-078 · VITE_FIREBASE_* env — tek canonical `.env` (dev + build)
+- **Tarih:** 2026-08-13
+- **Bağlam:** Sprint-05 Faz 2 M0-fix kök neden #5 — `mobile/.env` (committed) + `mobile/.env.local` (gitignored) tanımsızken Firebase init offline mode'a düşüyordu, `pushToRemote` no-op kalıyordu, "hiç tepki yok" davranışı. Vite önce `.env.local`'i okur sonra `.env` fallback (SvelteKit/Vite standard).
+- **Karar:**
+  - 6 env key canonical `mobile/.env`'de: `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID`.
+  - Prod deploy: Firebase Hosting environment-config (gizli key'ler için Firebase App Hosting / Secret Manager önerilir, Sprint-07+ değerlendir).
+  - **Yeni env eklenirse:** hem `.env` hem `.env.local` (dev convenience) güncellenmeli. CI'de `npm run build` başarısız olur (env yok) — fail-fast.
+- **Gerekçe:** MVP auth-free + tek-ortam (no staging/prod separation). Tek canonical `.env` commit edilebilir (Firebase client config public), `.env.local` override için. Init order: `.env.local` > `.env` (Vite standard).
+- **Etki:** `mobile/.env` (6 key, committed) + `mobile/.env.example` (şablon, gitignored). Production secret rotation: Firebase App Hosting env-config.
+- **İlgili task:** Sprint-06 Faz 3 P4 (bu DECISIONS)
+
+### D-079 · M0-fix serisi + 5 gizli kök neden (plan dışı emergency debug)
+- **Tarih:** 2026-08-13
+- **Bağlam:** Sprint-05 Faz 2 sırasında plan dışı 4 commit acil debug'dan çıktı — callable zinciri canlıya almak için 5 kök nedeni tespit edip gidermek gerekti. Bu commit'ler atomik sprint planının parçası değildi, sprint retrospective'te (`docs/retrospectives/2026-08-13-sprint-05.md`) belgelendi.
+- **Karar:**
+  - **M0-fix serisi plan dışı emergency debug olarak kabul edildi** — bir daha tekrarlanmaması için DECISIONS'a alındı.
+  - **4 commit (atomic chain):**
+    - `c624a45` — M0 #1: `getFns()` helper (callable client init fix, TypeError: `functionsInstance._url is not a function`)
+    - `60338af` — M0 #2: `setRoomContext` içinde client-side `writePresence` kaldırıldı (server-side merge override ediyordu)
+    - `34fa2f2` — M0 #2 ext: lifecycle hooks (visibility/beforeunload) artık `pushToRemote()` kullanıyor (server-side, M3 settle queue ile entegre)
+    - `972d026` — docs daily: 2026-08-12.md Sprint-05 Faz 2 Part 1 wrap-up
+  - **5 gizli kök neden** (`daily/2026-08-12.md:88-101` referans):
+    1. Client mimarisi fragile — `$effect` re-fire her snapshot'ta yeni object reference, `setRoomContext` üzerinden `writePresence('idle', 0)` her fire'da overwrite.
+    2. Server-side callable kopuk — `httpsCallable` tek argümanla (sadece name) çağrıldığında SDK internal `_url` resolve edemiyor.
+    3. Client-side write server-side merge'i override ediyor — `setRoomContext` async → server-side write → client-side write sonra bitiyor → 'idle' kazanıyor.
+    4. Visibility/beforeunload hook'ları aynı overwrite — M0-fix #2 sadece `setRoomContext`'i düzeltmişti, hook'lardaki `writePresence` overwrite'ı kalmıştı.
+    5. VITE_FIREBASE_* env tanımsız — Firebase init offline mode → `pushToRemote` no-op → "hiç tepki yok".
+- **Gerekçe:** Plan dışı emergency debug tekrarını önlemek için "callable invocation smoke test ilk adım olmalı" lesson'ı DECISIONS'a alındı. 5 kök neden birbirine bağlı (cascading fail) — her biri tek başına fix yetmezdi, hepsi sırayla çözüldü.
+- **Etki:** `docs/retrospectives/2026-08-13-sprint-05.md` (M0-fix serisi + 5 kök neden detayı). Gelecek sprint planning'te "callable chain smoke test" zorunlu pre-implementation step.
+- **İlgili task:** Sprint-06 Faz 3 P4 (bu DECISIONS)
+
+---
+
+**2026-08-13 Faz 3 P4:** D-078 (env) + D-079 (M0-fix series + 5 kök neden) DECISIONS'a alındı. Plan'daki "D-063/D-064 ekle" talimatı ESKİ — bu numaralar 2026-08-11'de ZATEN DOLU (D-063 localStorage cache for myRooms, D-064 yanıp sönen nokta).
+
 
