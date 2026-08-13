@@ -53,7 +53,7 @@ export const onPresenceChange = onCall(async (request) => {
   // Server-side Math.max ile aggregate her zaman monoton ilerler. D-019 invariant.
   const presenceRef = db.doc(`rooms/${roomId}/presence/${uid}`);
   const prevSnap = await presenceRef.get();
-  const prevElapsedMs = prevSnap.exists()
+  const prevElapsedMs = prevSnap.exists
     ? Number((prevSnap.data() as { elapsedMs?: number } | undefined)?.elapsedMs ?? 0)
     : 0;
   const safeElapsedMs = Math.max(prevElapsedMs, elapsedMs);
