@@ -77,9 +77,10 @@ service cloud.firestore {
 				.hasOnly(['memberCount'])
 				&& request.resource.data.memberCount is int
 				&& request.resource.data.memberCount >= 1;
-			// D-049: silme — client-side owner check yapıyor (Firestore rules custom
-			// function olmadan uid karşılaştırma yapılamadığından MVP'de açık)
-			allow delete: if true;
+			// D-049 / Sprint-06 Faz 4 F3: silme — callable `onDeleteRoom` Cloud Function
+			// üzerinden server-side owner check. Admin SDK rules'ı bypass eder;
+			// client doğrudan deleteDoc çağıramaz.
+			allow delete: if false;
 
 			// rooms/{roomId}/presence/{uid}: odadaki kullanıcı durumu (D-019, D-047)
 			match /presence/{uid} {

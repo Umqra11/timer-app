@@ -34,7 +34,7 @@ import {
 	updateDoc,
 	where
 } from 'firebase/firestore';
-import { getDb } from './client';
+import { getDb, httpsCallable, getFns } from './client';
 import { getDeviceUid } from './uid';
 import { subscribeUserWeeklySeconds } from './sessions';
 
@@ -308,22 +308,26 @@ export async function deleteRoom(roomId: string): Promise<{ ok: true } | { ok: f
 	const db = getDb();
 	if (!db) return { ok: false, reason: 'unavailable' };
 	const uid = getDeviceUid();
+	const fns = getFns();
+	if (!fns) return { ok: false, reason: 'unavailable' };
 
 	try {
-		const roomRef = doc(db, `${ROOMS}/${roomId}`);
-		const snap = await getDoc(roomRef);
-		if (!snap.exists()) return { ok: false, reason: 'not-found' };
-		const data = snap.data() as { ownerUid: string };
-		if (data.ownerUid !== uid) return { ok: false, reason: 'forbidden' };
+		// D-049 / Sprint-06 Faz 4 F3: server-side owner check + subcollection cleanup
+		// (presence + reactions). `firestore.rules` artık `delete: if false` —
+		// client doğrudan `deleteDoc` çağıramaz, callable zorunlu.
+		const fn = httpsCallable(fns, 'onDeleteRoom');
+		await fn({ roomId, uid });
 
-		// joinedRooms/{roomId} doc'unu da temizle — D-062: rules delete: true.
-		// Yoksa sahip kendi joinedRooms doc'unda orphan kalır, /leaderboard
-		// myRooms listesinde oda görünür durumda kalır (C2 fix).
-		await deleteDoc(roomRef);
+		// joinedRooms/{roomId} cleanup — admin SDK rules'ı bypass etti ama
+		// joinedRooms user subcollection'da, callable bunu silmez (cross-user
+		// değil, sadece callerUid'in joined doc'u). Client-side kalabilir.
 		await deleteDoc(doc(db, `users/${uid}/${JOINED}/${roomId}`));
 		return { ok: true };
-	} catch (err) {
-		console.error('[rooms] deleteRoom failed', err);
+	} catch (err: unknown) {
+		const code = (err as { code?: string })?.code;
+		console.error('[rooms] deleteRoom failed', code, err);
+		if (code === 'functions/permission-denied') return { ok: false, reason: 'forbidden' };
+		if (code === 'functions/not-found') return { ok: false, reason: 'not-found' };
 		return { ok: false, reason: 'error' };
 	}
 }

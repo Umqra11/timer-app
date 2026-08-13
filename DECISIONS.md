@@ -905,4 +905,21 @@ type: decisions-log
 
 **2026-08-13 Faz 3 P4:** D-078 (env) + D-079 (M0-fix series + 5 kök neden) DECISIONS'a alındı. Plan'daki "D-063/D-064 ekle" talimatı ESKİ — bu numaralar 2026-08-11'de ZATEN DOLU (D-063 localStorage cache for myRooms, D-064 yanıp sönen nokta).
 
+### D-081 · Server-side owner-only room delete (D-049 / Sprint-06 Faz 4 F3)
+- **Tarih:** 2026-08-13
+- **Bağlam:** D-049 — `firestore.rules` `match /rooms/{roomId} { allow delete: if true }` açık. Client-side owner check MVP auth-free'de yetersiz: Firestore rules custom function olmadan uid karşılaştırma yapamaz (cross-user corruption riski teorik, exploit kanıtı yok ama production guard şart).
+- **Karar:**
+  - **Callable Cloud Function `onDeleteRoom`** — server-side owner check + subcollection cleanup (presence + reactions). Callable (NOT trigger) çünkü:
+    - Sahiplik kontrolü delete'ten ÖNCE yapılmalı (trigger zaten silinmiş doc'u görür, kontrol anlamsız)
+    - Custom logic: paginated subcollection batch delete + `joinedRooms` orphan policy (D-062 kısayolu: zararsız, Sprint-07'de tam purge)
+  - **`firestore.rules` L82:** `allow delete: if true` → `allow delete: if false`. Admin SDK rules'ı bypass eder; client doğrudan `deleteDoc` çağıramaz, callable zorunlu.
+  - **Client refactor (`rooms.ts:307-329`):** `deleteDoc(roomRef)` yerine `httpsCallable(fns, 'onDeleteRoom')({ roomId, uid })`. Error mapping: `permission-denied` → `'forbidden'`, `not-found` → `'not-found'`. `joinedRooms/{roomId}` cleanup client-side kalır (callerUid'in kendi user subcollection'ı).
+- **Gerekçe:** Custom Cloud Function = cross-user corruption riski kapalı (admin SDK + server-side validation). Sahiplik check + subcollection cleanup atomic. MVP auth-free contract korunur (uid payload'dan).
+- **Etki:**
+  - `mobile/functions/src/onDeleteRoom.ts` (yeni, 75 satır) + index.ts export
+  - `mobile/functions/src/__tests__/onDeleteRoom.test.ts` (yeni, 4 vitest unit test)
+  - `mobile/firestore.rules` L82 (delete: false)
+  - `mobile/src/lib/firebase/rooms.ts:307-329` deleteRoom callable refactor
+- **İlgili task:** Sprint-06 Faz 4 F3
+
 
