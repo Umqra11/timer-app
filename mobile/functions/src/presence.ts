@@ -48,10 +48,20 @@ export const onPresenceChange = onCall(async (request) => {
 
   await assertRateLimit(uid);
 
-  await db.doc(`rooms/${roomId}/presence/${uid}`).set({
+  // M2 fix — mergeStats MAX monotonic. Client elapsedMs snapshot'ları
+  // nadiren geriye gidebilir (cross-device, multi-tab race, stale cache).
+  // Server-side Math.max ile aggregate her zaman monoton ilerler. D-019 invariant.
+  const presenceRef = db.doc(`rooms/${roomId}/presence/${uid}`);
+  const prevSnap = await presenceRef.get();
+  const prevElapsedMs = prevSnap.exists()
+    ? Number((prevSnap.data() as { elapsedMs?: number } | undefined)?.elapsedMs ?? 0)
+    : 0;
+  const safeElapsedMs = Math.max(prevElapsedMs, elapsedMs);
+
+  await presenceRef.set({
     uid,
     status,
-    elapsedMs,
+    elapsedMs: safeElapsedMs,
     updatedAt: FieldValue.serverTimestamp()
   }, { merge: true });
 
