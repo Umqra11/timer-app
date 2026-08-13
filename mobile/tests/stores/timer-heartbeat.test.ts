@@ -113,4 +113,20 @@ describe('60s presence heartbeat — Sprint-06 Faz 3 P2', () => {
 			'resume() must invoke startPresenceHeartbeat() (or inline setInterval with 60_000) when re-entering running'
 		).toBe(true);
 	});
+
+	it('visibilitychange handler pushes on visible (YouTube → return immediate sync)', () => {
+		const src = readFileSync(TIMER_SRC, 'utf-8');
+		// Find the onVisibility body — it should check for both 'hidden' AND 'visible'
+		// (or have a separate branch). Either way, 'visible' must trigger pushToRemote.
+		const visibilityHandler = src.match(
+			/(?:const|let|var)\s+onVisibility\s*=\s*(?:\([^)]*\)\s*=>\s*\{[\s\S]*?\}|function[\s\S]*?\{[\s\S]*?\})/
+		)?.[0] ?? '';
+		const pushOnVisible =
+			visibilityHandler.includes('visible') &&
+			visibilityHandler.includes('pushToRemote');
+		expect(
+			pushOnVisible,
+			'onVisibility handler must invoke pushToRemote when document.visibilityState === "visible" (YouTube → return immediate sync, Sprint-06 Faz 3 P2)'
+		).toBe(true);
+	});
 });
