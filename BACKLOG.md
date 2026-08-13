@@ -1,7 +1,7 @@
 ---
 tags: [timer, backlog, bugs, improvements, obsidian-ready]
 created: 2026-08-11
-updated: 2026-08-11
+updated: 2026-08-12
 type: backlog
 ---
 
@@ -71,5 +71,48 @@ _(henüz yok)_
 
 ---
 
-**Toplam:** 3 nokta (2 bug, 1 iyileştirme)
-**Son güncelleme:** 2026-08-11
+## 📅 2026-08-12 (3 nokta) — Sprint-05 Faz 1.5 parked
+
+### 🐛 Bug
+
+#### #4 — Yanıp sönen nokta (pulsing dot) çalışmıyor
+**Sorun:** Sprint-05 Faz 1.5 #2 maddesi olarak eklendi. `effective === 'running'` durumunda username yanında yeşil pulsing dot görünmeli. 5 fix denendi (commit d0a7112, 699e3cc, 22f4e14, 25beb62, 69d1c43) — hepsi başarısız. Brave shield hipotezi elendi (Safari'de de çalışmıyor). Client-side presence write mimarisi fragile.
+
+**Beklenen:** `timer.setRoomContext` mount'ta çağrılmalı, Firestore `status: "running"` yazılmalı, `/leaderboard` subscribe ile render etmeli. Debug log kanıtı: `pushToRemote writing presence, status= running` çağrıldı ama doc hâlâ `idle, 0` (override pattern — Fix 5 guard snapshot re-fire'ları engelledi, ama başka sorun var).
+
+**Park kararı:** Sprint-05 Faz 1.5 patron kararı (2026-08-12): #2/#5/#6 Faz 2'ye park edildi. Client-side mimari değiştirilemez. Server-side presence write (Cloud Functions) gerekli.
+
+**İlgili karar:** Sprint-05 Faz 2 planlaması (D-022) — Cloud Functions + server-side rate limit + owner check + recursive delete.
+
+**Dosya:** `mobile/src/routes/+page.svelte` (Fix 5 lastRoomId guard eklendi, kalmalı) + `mobile/src/lib/stores/timer.svelte.ts` (presence write mimarisi).
+
+---
+
+#### #5 — Sessions write başarısız
+**Sorun:** Sprint-05 Faz 1.5 #5 maddesi olarak eklendi. `timer.finish()` her seans bitişinde `users/{uid}/sessions/{sid}` doc yazmalı. Patron Firebase Console'da 2 doc oluştuğunu gördü (önceki test'ten), ama yeni finish'lerde doc oluşmuyor gibi. Aynı presence write mimarisi sorunundan muzdarip.
+
+**Beklenen:** Her finish'te `recordSession({ dayKey, startedAt, endedAt: serverTimestamp(), elapsedMs })` → `users/{uid}/sessions/{sid}` doc. Subscribers (`subscribeUserWeeklySeconds`) bu doc'ları sum'lamalı.
+
+**Park kararı:** Sprint-05 Faz 1.5 patron kararı (2026-08-12): #5 Faz 2'ye park. `recordSession` aynı mimari sorunundan muzdarip, server-side yazım gerekli.
+
+**İlgili karar:** Sprint-05 Faz 2 (D-067 sessions subcollection + Faz 2 server-side).
+
+**Dosya:** `mobile/src/lib/firebase/sessions.ts` (yeni) + `mobile/src/lib/stores/timer.svelte.ts:174-192` (finish()).
+
+---
+
+#### #6 — Weekly live timer (rolling 7-day) çalışmıyor
+**Sorun:** Sprint-05 Faz 1.5 #6 maddesi olarak eklendi. `/leaderboard`'da her kullanıcının yanında "bu hafta" / "şu an" etiketi + her saniye artan süre görünmeli. 5 fix denendi — hepsi başarısız.
+
+**Beklenen:** `liveSeconds(entry, now)` pure fn ile weeklySeconds + elapsedMs/1000 + (running only)(now - lastSeen)/1000 hesaplamalı. 1 saniyelik `$effect` + `setInterval` ile `nowMs` reaktif. Patron'un test'i: "manuel idle → running değiştir → istediğim çıktıyü gördüm" → render doğru, write başarısız.
+
+**Park kararı:** Sprint-05 Faz 1.5 patron kararı (2026-08-12): #6 Faz 2'ye park. Subscribe çalışıyor (manuel test kanıtı), write başarısız. Server-side aggregation Faz 2'de.
+
+**İlgili karar:** Sprint-05 Faz 2 (D-068 weekly live + Faz 2 server-side aggregation).
+
+**Dosya:** `mobile/src/lib/utils/live-timer.ts` (yeni) + `mobile/src/lib/firebase/rooms.ts:368-479` (LeaderboardEntry + subscribeRoomMembers merge).
+
+---
+
+**Toplam:** 6 nokta (3 bug + 1 iyileştirme + 3 Faz 1.5 parked bug)
+**Son güncelleme:** 2026-08-12
