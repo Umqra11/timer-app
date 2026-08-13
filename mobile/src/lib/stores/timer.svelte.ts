@@ -15,6 +15,7 @@ import * as sessions from '$lib/firebase/sessions';
 import * as stats from '$lib/firebase/stats';
 import { getDeviceUid } from '$lib/firebase/uid';
 import { timerBroadcast } from '$lib/utils/broadcast.svelte';
+import { enqueuePending, installSettleFlush } from '$lib/utils/settle-queue';
 
 export type TimerStatus = 'idle' | 'running' | 'paused';
 
@@ -43,23 +44,33 @@ function createTimerStore() {
 		}
 	}
 
-	function pushToRemote() {
+	// M3 + M2 + M0-fix #1 — async, try/catch, settled queue + 'finished' mapping.
+	async function pushToRemote(): Promise<void> {
 		timerBroadcast.send({ type: 'tick', elapsedMs, status });
-		if (roomCtx) {
-			const ps: presence.PresenceStatus =
-					status === 'running'
-						? 'running'
-					: status === 'paused'
-						? 'paused'
-					: status === 'finished'
-						? 'finished'
-					: 'idle';
-			const uid = getDeviceUid();
-			console.info('[presence] invoke', { roomId: roomCtx.roomId, status: ps, elapsedMs });
+		if (!roomCtx) return;
+		const ps: presence.PresenceStatus =
+				status === 'running'
+					? 'running'
+				: status === 'paused'
+					? 'paused'
+				: status === 'finished'
+					? 'finished'
+				: 'idle';
+		const uid = getDeviceUid();
+		console.info('[presence] invoke', { roomId: roomCtx.roomId, status: ps, elapsedMs });
 		const fn = httpsCallable(getFns(), 'onPresenceChange');
-			void fn({ roomId: roomCtx.roomId, status: ps, elapsedMs, uid }).catch((err: unknown) => {
-				console.error('[presence] callable failed', err);
+		try {
+			await fn({ roomId: roomCtx.roomId, status: ps, elapsedMs, uid });
+		} catch (err: unknown) {
+			// M3: offline / unavailable — kuyruğa yaz, online olunca installSettleFlush
+			// listener'ı otomatik olarak boşaltır.
+			enqueuePending({
+				roomId: roomCtx.roomId,
+				status: ps,
+				elapsedMs,
+				uid
 			});
+			console.warn('[presence] callable failed, queued for retry', err);
 		}
 	}
 
@@ -108,12 +119,7 @@ function createTimerStore() {
 		/**
 		 * Hangi odaya presence yazacağımızı belirle.
 		 * - onRemote callback verilmişse odanın presence'ını dinler
-		 * - her durumda hemen kendi presence'ımızı 'idle' olarak yazar (D-050)
 		 * - visibilitychange + beforeunload listener ekler (D-050)
-		 *
-		 * HATA: Önceki sürümde `if (!onRemote) return;` vardı — bu yüzden
-		 * `setRoomContext` callback verilmeden çağrıldığında presence
-		 * yazılmıyordu. Şimdi callback opsiyonel.
 		 */
 		setRoomContext(ctx: RoomContext, onRemote?: (p: presence.PresenceDoc[]) => void) {
 			roomCtx = ctx;
@@ -135,13 +141,18 @@ function createTimerStore() {
 				unsubscribePresence = presence.subscribeRoomPresence(ctx.roomId, onRemote);
 			}
 
-			// Kendi presence'ımızı yaz — leaderboard'da görünelim
-			// M0-fix #2: client-side writePresence kaldırıldı.
-		// Sebep: server-side write 'running' merge'i, client-side 'idle' overwrite
-		// ile her /+page.svelte → /leaderboard → /+page.svelte döngüsünde eziliyordu.
-		// Initial 'idle' yazımı artık sadece ilk 'start'/'pause'/'resume'/'finish'
-		// state transition'ında pushToRemote() ile server-side tetiklenir.
-		// Lobby'de 'Enes' görünmesi ancak 'Başla' tıklaması sonrası olur (kabul edilebilir MVP).
+			// M3: settle queue flush listener — idempotent. Online + visibilitychange
+			// tetiklendiğinde kuyruktaki pending write'ları callable ile tekrar dener.
+			// başarılı olanlar kuyruktan çıkar, başarısızlar bir sonraki online'a kalır.
+			void installSettleFlush(async (w) => {
+				const fn = httpsCallable(getFns(), 'onPresenceChange');
+				try {
+					await fn({ roomId: w.roomId, status: w.status, elapsedMs: w.elapsedMs, uid: w.uid });
+					return true;
+				} catch {
+					return false;
+				}
+			});
 
 			// D-050 — page lifecycle listener'ları
 			if (typeof window === 'undefined') return;
@@ -166,7 +177,7 @@ function createTimerStore() {
 			if (status === 'running') return;
 			status = 'running';
 			startTick();
-			pushToRemote();
+			void pushToRemote();
 		},
 		pause() {
 			if (status !== 'running') return;
@@ -176,13 +187,13 @@ function createTimerStore() {
 				lastTickAt = null;
 			}
 			status = 'paused';
-			pushToRemote();
+			void pushToRemote();
 		},
 		resume() {
 			if (status !== 'paused') return;
 			status = 'running';
 			startTick();
-			pushToRemote();
+			void pushToRemote();
 		},
 		toggle() {
 			if (status === 'running') this.pause();
@@ -216,12 +227,12 @@ function createTimerStore() {
 			if (roomCtx) {
 				// 1) status='finished' set + pushToRemote (server-side 'finished' merge)
 				status = 'finished';
-				pushToRemote();
+				void pushToRemote();
 				// 2) 250ms sonra elapsedMs=0, status='idle', pushToRemote (server-side 'idle')
 				setTimeout(() => {
 					elapsedMs = 0;
 					status = 'idle';
-					pushToRemote();
+					void pushToRemote();
 				}, 250);
 			} else {
 				// Offline / no room — eski davranış (sadece local reset, throttle gereksiz)
@@ -234,7 +245,7 @@ function createTimerStore() {
 			elapsedMs = 0;
 			status = 'idle';
 			lastTickAt = null;
-			pushToRemote();
+			void pushToRemote();
 		},
 		applyRemote,
 		bindRemote() {
