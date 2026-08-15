@@ -59,6 +59,9 @@ a93f92b A1 init guard
 | **F3** | **D-049 server-side owner check + delete rules tightening** — `allow delete: if true` → custom Cloud Function `onDeleteRoom(roomId)` ile ownerUid karşılaştırma. | 2 saat | Cloud Function tx experience |
 | **F4** | **#1 modal tutarsızlık** — Seans bitiş modal'ında "139sn / Bugün 0dk / Bu hafta 0dk" çelişkisi. Birim standardizasyonu + reactive weekly sum. | 1 saat | F2 hazır |
 | **F5** | **#2 PWA persistence + Service Worker** — `vite-plugin-pwa` + `static/sw.js`, `lastHeartbeatAt` fetch ve background sync. | 4-6 saat | Service Worker test altyapısı |
+| **F6** | **Last-seen tarih/saat leaderboard'da** _(2026-08-13 patron, D-070)_ — `presence/{uid}` doc'unda `updatedAt` zaten yazılıyor. `/leaderboard/+page.svelte` her kullanıcı satırına küçük "son görülme: 3dk önce / 14:32 / dün 21:15" rozeti ekle. Relative time → 24h sonra absolute date fallback. Online olmayan kullanıcılar da görünür kalır. **Status label `finished-late` ile çakışmamalı** (`statusLabel()` 805 satır, refactor gerekebilir). | 1.5 saat | F2 ile aynı readStats/reactive pattern |
+| **F7** | **Leaderboard yavaş + çirkin yükleniyor** _(2026-08-13 patron, D-071 + D-074)_ — `/leaderboard/+page.svelte` başka sayfadan navigate edilince flicker'lı, geç geliyor. **C option (D-074):** persistedState (IndexedDB cache) + skeleton + paralel subscribe. (a) `leaderboard:{roomId}` IndexedDB store → ilk render cache'ten; (b) `LeaderboardSkeleton.svelte` placeholder rows; (c) `Promise.all([subscribeLeaderboard, subscribeRoomPresence])` waterfall kırma; (d) oda değişince cache invalidation. | 2-3 saat | F1/F2 ile birlikte sprint'e paket |
+| **F8** | **Session durdurunca stats boş geliyor** _(2026-08-13 patron, D-072)_ — Seans durdurulduğunda "kaç dk / bu hafta / toplam / seansta" değerleri boş. F2 + F4'ün scope genişletmesi: `readStats()` `handleStop()` sonrası anında reactive olmalı (şu an readStats subscription stop sonrası refresh etmiyor olabilir). Vitest regression: stop→stats görünür. | 1-2 saat | F2 + F4 merge |
 
 ### 🟡 Faz 5 — Tech Debt / Scale-up (~3-4 saat, 1 sprint günü)
 
@@ -68,14 +71,21 @@ a93f92b A1 init guard
 | T2 | **E2E test infrastructure** — Playwright + `npx playwright test` for critical user flows. | 2 saat | vitest + emulator |
 | T3 | **CI/CD pipeline** — `.github/workflows/ci.yml` (svelte-check + vitest + build), `deploy.yml` (Firebase Hosting + Functions on main). | 1 saat | Firebase CLI workflow secret |
 | T4 | **Node 22 upgrade** — `engines.node = "22"`, `firebase.json` runtime upgrade, breaking change test. | 1 saat | Node 22 local kurulum |
+| **T5** | **No-badge policy enforcement** _(2026-08-13 patron, D-069)_ — Patron badge/rozet sistemi istemiyor. Grep `badge`/`rozet`/`medal`/`achievement`/`trophy` (case-insensitive) → varsa temizle; "finished" status badge'i UI text'i olarak kalabilir (championship değil). DECISIONS.md'ye D-069 yaz: "Gamification rozet/medal sistemi prod roadmap'inde YOK. Sadece status label (running/paused/finished) sergilenir." | 30dk | grep + DECISIONS.md |
 
 ### 🟢 Faz 6 — Sprint-07+ park edilmiş
 
-- Şampiyonluk rozet (KPSS-Love §8.6) — v2 gamification, MVP sonrası
-- Cross-user corruption hardening (D-015 device-uid auth-free'nin kalıcı riski; Cloud Function + rules audit)
+**Sprint-07 Faz 1 backlog (2026-08-13 trade-off onayı):**
+- **M3 durable queue** _(D-076)_ — IndexedDB-backed settle queue, Sessions `syncPendingSessions` pattern'i. 2-3 saat.
+- **D-015 cross-user hardening** _(D-075)_ — `auth.uid === $uid` rules sıkılaştırma + Cloud Function enforcement. F3 kısmi çözüm sağlıyor. 3-4 saat.
+- **Heatmap feature** _(D-073)_ — `cal-heatmap` library, `users/{uid}/sessions/{sessionId}` data source. **Data viz only** — `streak`/`combo`/`level` kelimesi YOK (D-069 uyumu). 4-6 saat.
+
+**Diğer park:**
+- ~~Şampiyonluk rozet (KPSS-Love §8.6)~~ — **2026-08-13 patron kararı: ÇIKARILDI. Badge/rozet sistemi istenmiyor (D-069, T5 ile scan+remove).**
+- ~~Championship + multi-period leaderboard~~ — KPSS-Love §8.6 referans; **D-069 ile değerlendirilemez** (gamification scope'u).
 - Supabase re-migration (Sprint-04'te denendi, reverted) — sadece distributed transactions veya row-level auth gereken feature'larda tekrar değerlendir
 - Salı 00:00 hafta sınırı (KPSS'e özgü)
-- Championship + multi-period leaderboard — KPSS-Love §8.6 referans
+- F5 PWA foundation (büyük iş, Sprint-07 sonu?)
 
 ---
 
@@ -94,6 +104,9 @@ a93f92b A1 init guard
   ├─ F1 owner button fix           (30dk) 🟠 hemen — izole
   ├─ F2 home stats                (1 saat)  🟠 P5'ten sonra — readStats reuse
   ├─ F4 modal units               (1 saat)  🟠 F2 sonrası
+  ├─ F6 last-seen leaderboard     (1.5 saat) 🟠 F2 sonrası — aynı readStats pattern
+  ├─ F7 leaderboard perf+UX       (1-2 saat) 🟠 F1/F2 ile birlikte — flicker/load fix
+  ├─ F8 session stats boş         (1-2 saat) 🟠 F2+F4 merge — handleStop sonrası reactive
   └─ F3 owner delete server-side  (2 saat) 🟡 izole
 
 [Teknik borç]
@@ -101,10 +114,11 @@ a93f92b A1 init guard
   ├─ T2 E2E (Playwright)          (2 saat) 🟢 sprint-06 sonu
   ├─ T3 CI/CD                     (1 saat) 🟢 T2 sonrası
   └─ T4 Node 22 upgrade           (1 saat) 🟡 Node 22 kurulum
+  └─ T5 no-badge policy (D-069)   (30dk)  🟡 hemen — patron kararı 2026-08-13
 
 [Park]
   ├─ F5 PWA (büyük iş — Sprint-07)
-  └─ Şampiyonluk rozet, D-015 hardening (Sprint-08+)
+  └─ D-015 hardening (Sprint-08+) — ~~Şampiyonluk rozet D-069 ile ÇIKARILDI~~
 ```
 
 ---
