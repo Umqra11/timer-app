@@ -6,6 +6,7 @@ node_modules
 .netlify
 .firebase
 /.svelte-kit
+/functions/.svelte-kit
 /build
 
 # OS
